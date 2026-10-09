@@ -1286,3 +1286,21 @@ begin
 end $$;
 
 select app.lock_down_functions();
+
+create or replace function public.api_receipt_draft_get(p_draft uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare v_d public.receipt_drafts; v_c public.campaigns;
+begin
+  select * into v_d from public.receipt_drafts where id = p_draft and actor_id = app.uid();
+  if not found then perform app.fail('NOT_FOUND'); end if;
+  select * into v_c from public.campaigns where id = v_d.campaign_id;
+  return jsonb_build_object('id', v_d.id, 'expiresAt', v_d.expires_at, 'status', case when v_d.status = 'quoted' and v_d.expires_at <= now() then 'expired' else v_d.status end,
+    'shopId', v_d.shop_id, 'shopName', (select display_name from public.shops where id = v_d.shop_id),
+    'campaignId', v_c.id, 'campaignName', v_c.name, 'amount', v_d.quote_amount, 'rulesVersion', v_d.rules_version, 'rulesText', v_c.rules_text,
+    'environment', v_c.environment,
+    'operationId', (select id from public.operations where draft_id = v_d.id),
+    'items', (select jsonb_agg(jsonb_build_object('displayNumber', c.display_number, 'faceValue', c.face_value) order by c.display_number)
+              from public.coupons c where c.id = any (v_d.coupon_ids)));
+end $$;
+
+select app.lock_down_functions();

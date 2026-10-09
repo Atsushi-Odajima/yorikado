@@ -1,0 +1,37 @@
+.shell {
+  max-width: var(--merchant-max);
+  margin: 0 auto;
+  padding: var(--s32) var(--s16) var(--s48);
+}
+@media (max-width: 359px) {
+  .shell {
+    padding-left: var(--s12);
+    padding-right: var(--s12);
+  }
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s12);
+  margin-bottom: var(--s32);
+}
+.brand img {
+  width: 148px;
+  height: auto;
+}
+.tagline {
+  color: var(--muted);
+  font-size: 16px;
+}
+.qr {
+  background: #fff;
+  border: 1px solid var(--line);
+  padding: var(--s16);
+  width: 232px;
+  max-width: 100%;
+}
+.secret {
+  font-family: ui-monospace, monospace;
+  font-size: 16px;
+  word-break: break-all;
+}

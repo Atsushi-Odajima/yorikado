@@ -339,3 +339,10 @@ export const voucherRoutes: Route[] = [
     },
   },
 ];
+
+voucherRoutes.push({
+  method: 'GET',
+  path: '/receipt-drafts/:id',
+  auth: 'user',
+  handler: async (ctx) => rpc(ctx.db, 'api_receipt_draft_get', { p_draft: parse(UUID, ctx.params.id) }),
+});

@@ -5,6 +5,7 @@ import { adminDb, requireUser, rpc, userDb } from '@/server/db/supabase';
 import { env } from '@/server/env';
 import { AppError } from '@/server/errors';
 import { accountBucket, enforce, LIMITS } from '@/server/ratelimit';
+import { setContextCookie, SHOP_COOKIE, TENANT_COOKIE } from '@/server/auth/context';
 import { parse, type Route } from '../router';
 
 const Email = z.string().trim().toLowerCase().email('メールアドレスの形式を確認してください').max(254);
@@ -222,3 +223,30 @@ export const authRoutes: Route[] = [
     handler: async (ctx) => rpc(ctx.db, 'api_me'),
   },
 ];
+
+authRoutes.push(
+  {
+    method: 'POST',
+    path: '/context/shop',
+    auth: 'user',
+    handler: async (ctx) => {
+      const b = parse(z.object({ shopId: z.string().uuid() }), await ctx.json());
+      const me = await rpc<{ shops: { shopId: string }[] }>(ctx.db, 'api_me');
+      if (!me.shops.some((s) => s.shopId === b.shopId)) throw new AppError('NOT_FOUND');
+      await setContextCookie(SHOP_COOKIE, b.shopId);
+      return { shopId: b.shopId };
+    },
+  },
+  {
+    method: 'POST',
+    path: '/context/tenant',
+    auth: 'user',
+    handler: async (ctx) => {
+      const b = parse(z.object({ tenantId: z.string().uuid() }), await ctx.json());
+      const me = await rpc<{ offices: { tenantId: string }[] }>(ctx.db, 'api_me');
+      if (!me.offices.some((s) => s.tenantId === b.tenantId)) throw new AppError('NOT_FOUND');
+      await setContextCookie(TENANT_COOKIE, b.tenantId);
+      return { tenantId: b.tenantId };
+    },
+  },
+);

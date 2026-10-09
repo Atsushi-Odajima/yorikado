@@ -1,0 +1,65 @@
+/* Yorikado design tokens (03_brand_and_ui_spec / design_tokens.json). Light theme only in v1. */
+:root {
+  color-scheme: light;
+
+  --canvas: #f7f4eb;
+  --surface: #ffffff;
+  --ink: #25372e;
+  --muted: #59685e;
+  --primary: #264d3c;
+  --on-primary: #ffffff;
+  --primary-hover: #1e3e30;
+  --primary-active: #173225;
+  --selected-surface: #eaf0e5;
+  --line: #d3d9d1;
+  --control-border: #748278;
+  --ochre: #c59b44;
+  --badge-surface: #f1dfac;
+  --badge-text: #4b3d1e;
+  --focus: #9d452b;
+  --success: #264d3c;
+  --warning: #825714;
+  --error: #a03428;
+  --warning-surface: #fff0d0;
+  --error-surface: #fbe9e4;
+  --disabled-surface: #e1e4df;
+  --disabled-text: #637067;
+
+  --font-ui: 'BIZ UDPGothic', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
+  --font-brand: 'Newsreader', Georgia, serif;
+  --font-display-ja: 'Noto Serif JP', serif;
+
+  --s4: 4px;
+  --s8: 8px;
+  --s12: 12px;
+  --s16: 16px;
+  --s24: 24px;
+  --s32: 32px;
+  --s48: 48px;
+  --s64: 64px;
+
+  --radius-primary: 13px;
+  --radius-input: 9px;
+  --radius-dialog: 16px;
+
+  --btn-h: 58px;
+  --btn2-h: 48px;
+  --home-voucher-h: 126px;
+  --input-h: 56px;
+  --touch: 44px;
+  --icon: 24px;
+  --icon-voucher: 32px;
+
+  --merchant-max: 480px;
+  --office-max: 1200px;
+  --bottom-nav-h: 64px;
+
+  --shadow-dialog: 0 12px 36px rgba(37, 55, 46, 0.16);
+  --transition-color: 120ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-color: 0ms;
+  }
+}
