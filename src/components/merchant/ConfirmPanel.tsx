@@ -57,7 +57,7 @@ export function ConfirmPanel({ draft }: { draft: Draft }) {
   const [error, setError] = useState<ApiError | null>(null);
   const [remaining, setRemaining] = useState(() => Math.max(0, Math.round((Date.parse(draft.expiresAt) - Date.now()) / 1000)));
   const keyRef = useRef<string | null>(null);
-  const recorded = useRef<'pending' | null>(null);
+  const [recorded, setRecorded] = useState<'pending' | null>(null);
 
   const groups = new Map<number, number>();
   for (const it of draft.items) groups.set(it.faceValue, (groups.get(it.faceValue) ?? 0) + 1);
@@ -79,7 +79,7 @@ export function ConfirmPanel({ draft }: { draft: Draft }) {
       done(r.operationId);
       return true;
     }
-    recorded.current = r ? 'pending' : null;
+    setRecorded(r ? 'pending' : null);
     return false;
   }, [done]);
 
@@ -188,7 +188,7 @@ export function ConfirmPanel({ draft }: { draft: Draft }) {
             成功・失敗のどちらとも決まっていません。下のボタンで状態を確認してください。
           </Notice>
           <Button onClick={() => void poll()}>もう一度確認する</Button>
-          {recorded.current === 'pending' && remaining > 0 && (
+          {recorded === 'pending' && remaining > 0 && (
             <Button variant="secondary" onClick={send}>
               記録がないため、同じ受付をもう一度送る
             </Button>

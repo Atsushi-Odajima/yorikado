@@ -8,6 +8,10 @@ const config = [
     ignores: ['.next/**', 'node_modules/**', 'design-kit/**', 'public/sw.js', 'next-env.d.ts', 'tmp/**', 'playwright-report/**', 'test-results/**'],
   },
   {
+    files: ['scripts/**', 'tests/**'],
+    rules: { '@typescript-eslint/no-explicit-any': 'off' },
+  },
+  {
     rules: {
       'no-restricted-syntax': [
         'error',

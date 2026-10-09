@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { BackLink, MerchantShell } from '@/components/merchant/Shell';
 import { d, RowLink, StateBadge, ui } from '@/components/ui';
 import { TASK_STATE_LABEL, TASK_TYPE_LABEL, type TaskType } from '@/domain/tasks/templates';
+import { nowMs } from '@/lib/time';
 import { load, requireMerchant } from '@/server/auth/page';
 
 export const metadata: Metadata = { title: '報告・返事' };
@@ -19,7 +20,7 @@ interface Item {
 export default async function TasksPage() {
   const { db, me, shop } = await requireMerchant();
   const tasks = await load<Item[]>(db, 'api_tasks_for_shop', { p_shop: shop.shopId });
-  const now = Date.now();
+  const now = nowMs();
   return (
     <MerchantShell shop={shop} environment={me.environment} nav="home">
       <BackLink href="/m" label="ホームへ" />

@@ -6,6 +6,7 @@ import { BackLink, MerchantShell } from '@/components/merchant/Shell';
 import m from '@/components/merchant/merchant.module.css';
 import { dt, Notice, StateBadge, ui } from '@/components/ui';
 import { CATEGORY_LABEL, REQUEST_STATUS_LABEL, type RequestCategory } from '@/domain/requests/categories';
+import { nowMs } from '@/lib/time';
 import { load, requireMerchant } from '@/server/auth/page';
 
 export const metadata: Metadata = { title: '相談の詳細' };
@@ -31,7 +32,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const sp = await searchParams;
   const { db, me, shop } = await requireMerchant();
   const r = await load<RequestDetail>(db, 'api_request_get', { p_req: id });
-  const canReopen = r.status !== 'resolved' || (r.reopenableUntil !== null && Date.parse(r.reopenableUntil) > Date.now());
+  const canReopen = r.status !== 'resolved' || (r.reopenableUntil !== null && Date.parse(r.reopenableUntil) > nowMs());
   return (
     <MerchantShell shop={shop} environment={me.environment} nav="none">
       <BackLink href="/m/requests" label="相談の一覧へ" />

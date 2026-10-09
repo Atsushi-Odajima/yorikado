@@ -1,5 +1,6 @@
 import 'server-only';
 import { headers } from 'next/headers';
+import { cache } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { rpc, userDb, type Db } from '@/server/db/supabase';
 import { AppError } from '@/server/errors';
@@ -45,7 +46,7 @@ export async function load<T>(db: Db, fn: string, args: Record<string, unknown> 
   }
 }
 
-export async function getMe(): Promise<{ db: Db; me: Me }> {
+export const getMe = cache(async function getMe(): Promise<{ db: Db; me: Me }> {
   const rid = (await headers()).get('x-request-id') ?? undefined;
   const db = await userDb(rid);
   const { data } = await db.auth.getClaims();
@@ -53,7 +54,7 @@ export async function getMe(): Promise<{ db: Db; me: Me }> {
   const me = await load<Me>(db, 'api_me');
   if (!me.profile?.termsAcceptedAt || !me.profile.displayName) redirect('/welcome');
   return { db, me };
-}
+});
 
 export async function requireMerchant(): Promise<{ db: Db; me: Me; shop: MeShop }> {
   const { db, me } = await getMe();

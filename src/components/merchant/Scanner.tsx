@@ -38,7 +38,7 @@ export function Scanner({ shopId, shopName, campaignId, campaignName }: { shopId
   const [message, setMessage] = useState<{ tone: 'warning' | 'error' | 'success'; text: string } | null>(null);
   const [manual, setManual] = useState('');
   const [busy, setBusy] = useState(false);
-  const [online, setOnline] = useState(true);
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
   // The camera callback is created once; read current values through refs.
   const tokensRef = useRef(tokens);
   const multiRef = useRef(multi);
@@ -67,7 +67,6 @@ export function Scanner({ shopId, shopName, campaignId, campaignName }: { shopId
       }
     };
     const onOnline = () => setOnline(navigator.onLine);
-    setOnline(navigator.onLine);
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('pagehide', stopCamera);
     window.addEventListener('online', onOnline);

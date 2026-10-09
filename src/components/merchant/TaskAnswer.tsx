@@ -37,7 +37,8 @@ export function TaskAnswer({ task, shopId }: { task: TaskDetail; shopId: string 
   const expected = useRef(task.current?.revision ?? 0);
   const key = useRef(newKey());
   const { busy, error, run, fieldError, setError } = useAction();
-  const closed = task.status !== 'published' || (task.dueAt !== null && Date.parse(task.dueAt) < Date.now());
+  const [openedAt] = useState(() => Date.now());
+  const closed = task.status !== 'published' || (task.dueAt !== null && Date.parse(task.dueAt) < openedAt);
 
   if (task.type === 'notice') {
     if (task.acknowledgedAt) return <Notice tone="success" title="確認済みです">{dt(task.acknowledgedAt)}</Notice>;

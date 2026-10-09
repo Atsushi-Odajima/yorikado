@@ -41,6 +41,8 @@ export function InviteForm() {
     // keep the one-time token out of history/referrers once read
     window.history.replaceState(null, '', '/invite');
     if (!t) return;
+    // Read the one-time token from the URL once on mount (not available during SSR).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setToken(t);
     void lookup.run(() => api<Info>('/invitations/lookup', { body: { token: t } })).then((r) => r && setInfo(r));
     // eslint-disable-next-line react-hooks/exhaustive-deps
