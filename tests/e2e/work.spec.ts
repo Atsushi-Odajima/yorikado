@@ -7,14 +7,18 @@ test.describe('M5-M7 tasks and requests', () => {
     await login(page, 'a.staff@example.com');
     await page.goto('/m/tasks');
     await page.getByRole('link', { name: /年末の防犯パトロールのお知らせ/ }).click();
-    await expect(page.getByText('未回答')).toBeVisible();
+    await page.waitForURL('**/m/tasks/**');
+    const state = page.locator('main').getByText('未回答', { exact: true });
+    await expect(state).toBeVisible();
     await page.reload();
-    await expect(page.getByText('未回答')).toBeVisible(); // opening twice still not acknowledged
+    await expect(state).toBeVisible(); // opening twice still not acknowledged
     await page.getByRole('button', { name: '確認しました' }).click();
     await expect(page.getByText('確認済みです')).toBeVisible();
 
     await page.goto('/m/tasks');
     await page.getByRole('link', { name: /年末年始の休業日/ }).click();
+    await page.waitForURL('**/m/tasks/**');
+    await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: '日付を追加する' }).click();
     await page.getByLabel('休業する日 1').fill('2026-12-31');
     await page.getByRole('button', { name: '内容を確認する' }).click();
@@ -63,7 +67,7 @@ test.describe('O1-O3 office', () => {
     const tabs = page.getByRole('navigation', { name: '事務局メニュー' }).getByRole('link');
     await expect(tabs).toHaveCount(5);
     await page.goto('/o/settlements');
-    await page.getByRole('link', { name: '#1' }).click();
+    await page.getByRole('link', { name: '#1', exact: true }).click();
     await expect(page.getByRole('complementary', { name: '確認欄' })).toBeVisible();
     await expect(page.getByText('支払作業票は銀行へそのまま取り込めるファイルではありません')).toBeVisible();
   });
@@ -71,7 +75,7 @@ test.describe('O1-O3 office', () => {
   test('operator cannot see approval actions for a batch they prepared', async ({ page }) => {
     await login(page, 'a.operator@example.com');
     await page.goto('/o/settlements');
-    await page.getByRole('link', { name: '#2' }).click();
+    await page.getByRole('link', { name: '#2', exact: true }).click();
     await expect(page.getByRole('button', { name: /を承認する/ })).toHaveCount(0);
   });
 });

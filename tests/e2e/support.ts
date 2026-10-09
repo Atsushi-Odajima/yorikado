@@ -65,6 +65,8 @@ export async function uiLogin(page: Page, email: string) {
 }
 
 export async function noHorizontalScroll(page: Page) {
+  // Compare with the configured viewport: on mobile emulation an overflowing page widens the layout viewport itself.
+  const vw = page.viewportSize()!.width;
   const r = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
-  expect(r.sw, `scrollWidth ${r.sw} > clientWidth ${r.cw}`).toBeLessThanOrEqual(r.cw);
+  expect(r.sw, `scrollWidth ${r.sw} > viewport ${vw}`).toBeLessThanOrEqual(Math.min(vw, r.cw));
 }

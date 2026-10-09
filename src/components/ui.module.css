@@ -84,6 +84,7 @@
 
 .field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s8);
   margin: 0 0 var(--s24);
 }
@@ -106,6 +107,7 @@
 .select,
 .textarea {
   width: 100%;
+  min-width: 0;
   min-height: var(--input-h);
   padding: var(--s12) var(--s16);
   border: 1px solid var(--control-border);
@@ -130,6 +132,7 @@
 
 .choices {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s8);
 }
 .choice {
@@ -287,10 +290,12 @@
 
 .stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s16);
 }
 .stack8 {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s8);
 }
 .row {

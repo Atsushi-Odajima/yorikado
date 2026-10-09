@@ -149,6 +149,10 @@ export async function dispatch(routes: Route[], req: NextRequest, segments: stri
       return bodyCache;
     };
     const db = route.auth === 'user' ? await userDb(requestId) : (null as unknown as Db);
+    if (route.auth === 'user') {
+      const { data } = await db.auth.getClaims();
+      if (!data?.claims?.sub) throw new AppError('UNAUTHENTICATED');
+    }
     const ctx: Ctx = {
       req,
       params,
