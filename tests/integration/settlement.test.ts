@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { as, fails, issue, newCampaign, p, redeem, SHOP_A1, SHOP_A2, sql, TENANT_A } from './helpers';
+import { as, fails, issue, newCampaign, p, redeem, SHOP_A1, SHOP_A2, sql } from './helpers';
 
 afterAll(async () => p.end());
 
