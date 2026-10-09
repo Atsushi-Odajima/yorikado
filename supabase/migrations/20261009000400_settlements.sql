@@ -236,7 +236,7 @@ $$;
 -- Collect unsettled sources into lines. Period is [start, end).
 create or replace function app.settlement_fill(p_batch uuid) returns void
 language plpgsql security definer set search_path = '' as $$
-declare v_b public.settlement_batches; v_c public.campaigns; r record; v_line uuid;
+declare v_b public.settlement_batches; v_c public.campaigns; rec record; v_line uuid;
 begin
   select * into v_b from public.settlement_batches where id = p_batch;
   select * into v_c from public.campaigns where id = v_b.campaign_id;
@@ -269,17 +269,17 @@ begin
     where t.campaign_id = v_c.id and t.occurred_at >= v_b.period_start and t.occurred_at < v_b.period_end
       and not exists (select 1 from public.settlement_sources ss where ss.source_type = 'external' and ss.source_id = t.id);
   end if;
-  for r in select shop_id, coalesce(sum(signed_amount) filter (where signed_amount > 0), 0) gross,
+  for rec in select shop_id, coalesce(sum(signed_amount) filter (where signed_amount > 0), 0) gross,
                   coalesce(-sum(signed_amount) filter (where signed_amount < 0), 0) rev
            from tmp_sources group by shop_id loop
     insert into public.settlement_lines (tenant_id, batch_id, shop_id, gross_amount, reversal_amount, net_amount, expected_date,
                                          status, exception_reason)
-    values (v_b.tenant_id, p_batch, r.shop_id, r.gross, r.rev, r.gross - r.rev, v_b.scheduled_payment_date,
-            case when r.gross - r.rev < 0 then 'exception' else 'pending' end,
-            case when r.gross - r.rev < 0 then 'NEGATIVE_ADJUSTMENT' end)
+    values (v_b.tenant_id, p_batch, rec.shop_id, rec.gross, rec.rev, rec.gross - rec.rev, v_b.scheduled_payment_date,
+            case when rec.gross - rec.rev < 0 then 'exception' else 'pending' end,
+            case when rec.gross - rec.rev < 0 then 'NEGATIVE_ADJUSTMENT' end)
     returning id into v_line;
     insert into public.settlement_sources (tenant_id, line_id, source_type, source_id, signed_amount, occurred_at)
-    select v_b.tenant_id, v_line, t.source_type, t.source_id, t.signed_amount, t.occurred_at from tmp_sources t where t.shop_id = r.shop_id;
+    select v_b.tenant_id, v_line, t.source_type, t.source_id, t.signed_amount, t.occurred_at from tmp_sources t where t.shop_id = rec.shop_id;
   end loop;
   update public.settlement_batches set total_amount = coalesce((select sum(net_amount) from public.settlement_lines where batch_id = p_batch and net_amount > 0), 0)
   where id = p_batch;

@@ -6,7 +6,25 @@
   "engines": {
     "node": ">=22.12.0 <23"
   },
-  "scripts": {},
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:status": "supabase status",
+    "db:reset:demo": "node --env-file-if-exists=.env.local scripts/db-reset-demo.mjs",
+    "jobs:dev": "node --env-file-if-exists=.env.local --import tsx scripts/run-jobs.ts --loop",
+    "jobs:once": "node --env-file-if-exists=.env.local --import tsx scripts/run-jobs.ts",
+    "verify-env": "node --env-file-if-exists=.env.local --import tsx scripts/verify-env.ts",
+    "export-tenant": "node --env-file-if-exists=.env.local --import tsx scripts/export-tenant.ts",
+    "perf": "node --env-file-if-exists=.env.local --import tsx scripts/perf.ts"
+  },
   "dependencies": {
     "@hookform/resolvers": "5.9.1",
     "@supabase/ssr": "0.12.7",
