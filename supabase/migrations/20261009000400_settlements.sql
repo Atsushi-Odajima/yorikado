@@ -481,7 +481,8 @@ begin
   update public.settlement_lines l set status = 'held', exception_reason = 'REVERSAL_AFTER_APPROVAL', updated_at = now()
   where l.batch_id = p_batch and l.status in ('approved', 'exported', 'failed') and exists (
     select 1 from public.settlement_sources ss join public.reversals v on v.redemption_id = ss.source_id
-    where ss.line_id = l.id and ss.source_type = 'redemption' and v.status in ('requested', 'approved'));
+    where ss.line_id = l.id and ss.source_type = 'redemption' and v.status in ('requested', 'approved')
+      and not exists (select 1 from public.settlement_sources x where x.source_type = 'redemption_reversal' and x.source_id = v.id));
   v_reexport := v_b.export_count > 0;
   update public.settlement_lines set status = 'exported', updated_at = now() where batch_id = p_batch and status in ('approved', 'failed');
   select coalesce(jsonb_agg(jsonb_build_object('lineId', l.id, 'shopId', l.shop_id, 'shopName', s.display_name, 'netAmount', l.net_amount,
