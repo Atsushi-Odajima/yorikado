@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { AUDIT_ACTION } from '@/components/office/labels';
 import { OfficeShell } from '@/components/office/Shell';
 import o from '@/components/office/office.module.css';
 import { dt, ui } from '@/components/ui';
@@ -26,7 +27,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
             {list.map((e) => (
               <tr key={e.id}>
                 <td>{dt(e.occurredAt)}</td>
-                <td>{e.action}</td>
+                <td>{AUDIT_ACTION[e.action] ?? e.action}<br /><span className={ui.meta} style={{ fontSize: 12 }}>{e.action}</span></td>
                 <td>{e.entity}<br /><span className={ui.meta} style={{ fontSize: 12 }}>{e.entityId}</span></td>
                 <td>{e.actorName ?? '—'}</td>
                 <td>{e.shopName ?? '—'}</td>
