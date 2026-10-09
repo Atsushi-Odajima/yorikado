@@ -1,0 +1,102 @@
+Yorikado / テスト結果（TEST_REPORT）
+=================================
+実施日: 2026-10-09（JST）／ 実施環境: Linux 開発コンテナ、Node.js v22.22.0、ローカル Supabase（PostgreSQL 17, GoTrue v2.197）
+対象コミット: claude/yorikado-v1 ブランチの最新（この文書と同じコミット）
+数値は実測です。未実施の項目は「未実施」と明記しています。自動アクセシビリティ検査のみで完全準拠を宣言しません。
+
+1. 静的検査・ビルド
+  npm run lint        … 合格（エラー0・警告0）
+  npm run typecheck   … 合格
+  npm run build       … 合格（Next.js 16.4.0 本番ビルド。全ページ動的レンダリング＝CSP nonce 適用）
+
+2. 単体テスト（npm run test）… 31件 合格
+  token（128bit/Crockford/正規化/URL拒否/鍵ローテーション）, AES-GCM（改ざん検知・旧鍵復号）,
+  外部CSV（BOM・引用符/改行・式注入・Excel桁落ち・TZなし日時・2/30・不正UTF-8・行数/サイズ上限・列マッピング）,
+  銀行結果CSV, 支払作業票（「銀行取込用ではない」明記・再出力表示・式注入無害化）, JST月境界,
+  印刷QR往復（qrcode で生成→ZXing で読取、354px/120px）, 画像（EXIF/GPS除去・長辺2400px・SVG/HTML/破損/10MB超の拒否）,
+  催促時間帯, 回答スキーマ, DBエラー対応表, PWA（manifest値・アイコン寸法・SWのキャッシュ対象）, SW のフォールバック動作
+
+3. DB統合テスト（npm run test:integration、ローカルDEMO DB、実際の api_* 関数を利用者の JWT クレームで実行）… 46件 合格
+  AC04 1枚/10枚の金額・明細件数
+  AC05 2店舗×20並列で同一券 → 成功はちょうど1件、券=redeemed、redemption_items=1
+  AC06 同一キー再送=同一結果、異なる内容=409、同時3回押し=1操作、draft期限後も確定済みキーは同結果、未記録キーは pending、期限切れ draft は拒否
+  AC07 1枚期限切れで全体失敗（確認中に期限切れでも全券 active のまま）、金額改ざん・他人のdraft・他組織/非所属店・規則版変更・使用済み・別事業・停止中事業・対象外店・未有効券を拒否
+  AC08 取消: 店員は申請不可、事務局担当は承認不可、別の承認者のみ、券は retired で再受付不可、受付記録は削除不可
+  AC09 紙券: submitted は精算 source にならず審査を止める、差額は理由必須、束番号の重複確認不可
+  AC10 外部CSV: 同一ファイル hash は既存、同一キー同一内容 skip・内容違い conflict で確定不可、不明店・他組織店舗コード（他組織へ割当不可）・部分取消 unsupported・式注入行、確定/取消の精算
+  AC11 sources=lines=batch、JST [開始,終了) 境界、二重精算なし、作成者は承認不可・MFA 5分超は不可
+  AC12 出力=exported（支払済みではない）、成功/失敗/不明行の混在、同一ファイル再取込、取込者は確定不可、再出力は未確認行のみ、金額不足の success は UNDERPAID、支払後取消は次回精算の負の調整（exception）で既存精算は不変
+  AC13 回覧は開くだけで確認されない、店ごと1現在版・版競合409で最新回答を返す、代理入力の理由・監査（acting_for_shop）、未知項目/期限後の拒否、公開済み定義の上書き不可、改版で旧回答は残る、店情報変更は確認後に反映
+  AC14 催促は未回答店のみ・1日1回、dedupe、内部メモと添付は店舗API/RLSの双方で非表示、解決理由必須・30日以内の再開・30日超は不可、相談作成の冪等
+  AC15 他組織データは関数で404・RLSで0件（10テーブル×2ロール）、店員は自店のみ、口座/token digest/outbox/添付パスは列・表権限で拒否、API ロールのテーブル書込不可、Storage 直接参照0件、監査ログ更新不可、anon は関数実行不可、svc_* は authenticated 実行不可、セッション失効/絶対期限切れ/他人のセッションID/事務局8時間超/所属失効で拒否、自己権限付与・最後の管理者削除不可
+  AC16 SQL風入力はデータとして保存、他店の添付・未検査添付の利用不可
+  AC17 監査に token・口座番号なし、組織データ出力は当該組織の行のみ（A/B 双方向）・digest/暗号文なし・CSV式注入なし・マスク版は電話番号と添付を除外
+  AC19 未有効のまま作成、取得前の枚数確認不可、枚数不一致、発行者は有効化不可、取得期限切れ、破棄で未使用券 void、200枚超/事業にない額面は拒否、db:reset:demo は LIVE/非ローカルを拒否
+  招待（72h・単回・メール一致）、DB共有レート制限（11回目拒否）、ジョブ（5回で failed・dedupe）、催促ダイジェスト
+
+4. E2E（npm run test:e2e、Playwright 1.56.1 / Chromium、Pixel 7 相当のモバイル表示 390×844、ローカル dev サーバー）… 26件 合格
+  ✓ a11y-layout.spec.ts:7:5 › axe: no serious/critical violations on key screens (automated check only)
+  ✓ a11y-layout.spec.ts:21:5 › office screens axe check
+  ✓ a11y-layout.spec.ts:31:7 › no horizontal scroll at 320px (merchant)
+  ✓ a11y-layout.spec.ts:31:7 › no horizontal scroll at 375px (merchant)
+  ✓ a11y-layout.spec.ts:31:7 › no horizontal scroll at 390px (merchant)
+  ✓ a11y-layout.spec.ts:31:7 › no horizontal scroll at 430px (merchant)
+  ✓ a11y-layout.spec.ts:31:7 › no horizontal scroll at 768px (merchant)
+  ✓ a11y-layout.spec.ts:31:7 › no horizontal scroll at 1280px (merchant)
+  ✓ a11y-layout.spec.ts:41:5 › primary controls meet size rules (58px main button, 44px touch targets)
+  ✓ a11y-layout.spec.ts:54:5 › text zoom: 200% browser zoom equivalent (640px desktop) keeps the merchant layout usable
+  ✓ merchant-voucher.spec.ts:5:7 › M1-M4 voucher acceptance › home has exactly three main entries and a practice banner
+  ✓ merchant-voucher.spec.ts:16:7 › M1-M4 voucher acceptance › one coupon by number -> confirm -> receipt; reuse is refused
+  ✓ merchant-voucher.spec.ts:40:7 › M1-M4 voucher acceptance › ten coupons in one receipt: amounts add up
+  ✓ merchant-voucher.spec.ts:66:7 › M1-M4 voucher acceptance › unsupported QR content is never opened as a URL
+  ✓ merchant-voucher.spec.ts:78:7 › M1-M4 voucher acceptance › network loss during confirmation shows "checking", never a fake success
+  ✓ security.spec.ts:10:7 › HTTP security › state-changing API requires the CSRF header and same origin
+  ✓ security.spec.ts:18:7 › HTTP security › unauthenticated API calls are rejected without leaking data
+  ✓ security.spec.ts:26:7 › HTTP security › job runner only with the cron secret
+  ✓ security.spec.ts:34:7 › HTTP security › pages send CSP and hardening headers; session cookies are HttpOnly
+  ✓ security.spec.ts:52:7 › HTTP security › logout everywhere invalidates the session
+  ✓ security.spec.ts:64:7 › PWA / offline (AC18) › service worker caches only the public shell; offline shows the notice
+  ✓ security.spec.ts:88:7 › PWA / offline (AC18) › manifest matches the spec
+  ✓ work.spec.ts:6:7 › M5-M7 tasks and requests › notice is confirmed only by the button; event answer shows a review step
+  ✓ work.spec.ts:30:7 › M5-M7 tasks and requests › request with a photo; internal memo stays inside the office
+  ✓ work.spec.ts:64:7 › O1-O3 office › queue, settlement detail with a separate approval column
+  ✓ work.spec.ts:75:7 › O1-O3 office › operator cannot see approval actions for a batch they prepared
+  補足: ログインは利用者ごとに1回だけ行い Cookie を再利用（本番と同じログイン制限 10回/15分/IP を維持したまま実行するため）。
+  補足: Playwright のオフライン模擬は Service Worker 自身の通信に適用されないため、オフライン時の「通信が必要です」表示は
+        tests/unit/sw.test.ts で SW の fetch 処理を直接検証し、E2E では SW キャッシュの中身（公開シェルのみ）を検証。
+  修正履歴（このテストで見つけて直した不具合）: モバイル表示で読取画面のグリッドが481pxに広がりボタンが押せない／
+        SSR と水和の不一致（Node の navigator）／未ログイン時 API が404になる／静的ページに CSP nonce が付かずスクリプトが止まる／
+        label への aria-checked（axe）／取消を含む精算行の誤保留。
+
+5. 性能（AC20、npm run perf、本番ビルド next start、同一マシン上のアプリ・DB・クライアント）
+  目標（暫定）: API p95 ≤ 1秒（10 req/s、メール処理を除く）
+  読取 API GET /merchant/home  10 req/s × 30秒 = 300件  エラー0  p50 17.3ms / p95 22.6ms / p99 30.2ms / 最大 51.3ms
+  ホーム画面 HTML（/m）         30件                      p50 34.7ms / p95 68.2ms
+  券の見積 POST /receipt-drafts  12件                      p50 19.5ms / p95 28.1ms
+  受付確定 POST /redemptions     12件  エラー0              p50 21.2ms / p95 27.6ms
+  → 目標内。ただし単一マシン・ローカルDBの数値で、本番（ネットワーク越しの Supabase、コールドスタート）の容量値ではありません。
+    LIVE 前にホスティング環境で同じスクリプトを実行し記録してください。Lighthouse 等のブラウザ側計測は未実施。
+
+6. バックアップ復元訓練（AC21、npm run backup:check、ローカルDEMO）
+  pg_dump(custom) → 新しいDBへ pg_restore → 45テーブル 1,302行の行数、精算合計（batch/lines/sources とも一致）、添付3件の SHA-256 → 不一致0
+  所要: バックアップ 0.5秒 / 復元 1.45秒（ローカルの小規模データ。RPO 24h / RTO 8h の目標は未実測。ホスティングの PITR 復元は未実施）
+
+7. 未実施（実機・外部環境が必要）— 本番開始のゲートは閉じたまま
+  - AC03 iPhone 実機（HTTPS の DEMO URL）: カメラ許可/拒否/復帰、背面カメラ、回転・バックグラウンド・画面ロックからの復帰、
+         写真からの読取、番号入力、撮影写真のアップロード（JPEG化）、ホーム画面追加、セッション復帰 … 未実施
+  - AC02 VoiceOver・文字200%（iOS の表示設定）・日本語IME・外付けキーボードでの主要操作 … 未実施（自動 axe とレイアウト幅の検査のみ）
+  - AC01 ソフトキーボード表示時の確定ボタンの被り … 実機未確認（確定ボタンは通常のフローに配置）
+  - WebKit（Playwright）… 開発コンテナに WebKit が無く未実行（PW_WEBKIT=1 で実行可能な設定は用意済み）
+  - 印刷した券（紙）を実際にスマホで読み取る検証 … 未実施
+  - メール: ローカル受信箱（Mailpit）への送信のみ確認。実 SMTP は未接続
+  - 第三者のセキュリティ診断 … 未実施
+
+8. 実機確認項目（iPhone Safari、HTTPS の DEMO で実施して結果を追記）
+  □ ログイン／招待リンクから登録／パスワード再設定メール
+  □ 券を読み取る: カメラ許可→読取→確認→受取。拒否時の案内。別アプリ使用中。画面ロック→復帰後「カメラを再開する」
+  □ 写真から読み取る、番号入力（全角・ハイフン混じり）
+  □ 10枚まとめて、同じ券の連続検出で枚数が増えない
+  □ 機内モードで「通信が必要です」、受付が後から自動送信されない
+  □ 相談に写真（カメラ撮影・HEIC設定時の挙動）
+  □ 文字サイズ最大・VoiceOver で主要3入口と受取確認が操作できる
+  □ ホーム画面に追加して起動（standalone）、セッション復帰

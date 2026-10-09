@@ -4,6 +4,9 @@ import { MfaProvider } from '@/components/feedback/MfaProvider';
 import { ServiceWorker } from '@/components/feedback/ServiceWorker';
 import '@/styles/global.css';
 
+// Every page is rendered per request so the CSP nonce from proxy.ts is applied to Next's scripts.
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: { default: 'Yorikado 商店街の窓口', template: '%s | Yorikado' },
   applicationName: 'Yorikado',
