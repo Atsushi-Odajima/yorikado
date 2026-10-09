@@ -508,6 +508,14 @@ begin
   return jsonb_build_object('revoked', v_n);
 end $$;
 
+create or replace function public.api_session_revoke_current() returns jsonb
+language plpgsql security definer set search_path = '' as $$
+begin
+  update public.app_sessions set revoked_at = now()
+  where session_id = nullif(auth.jwt() ->> 'session_id', '')::uuid and user_id = auth.uid() and revoked_at is null;
+  return jsonb_build_object('ok', true);
+end $$;
+
 create or replace function public.api_me() returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 declare v_uid uuid := app.uid();

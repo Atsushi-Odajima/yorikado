@@ -779,3 +779,39 @@ begin
 end $$;
 
 select app.lock_down_functions();
+
+create or replace function public.api_tasks_office_list(p_tenant uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform app.require_office(p_tenant, array['office_operator', 'office_approver', 'tenant_admin', 'auditor']);
+  return coalesce((select jsonb_agg(app.task_json(t) || jsonb_build_object(
+      'recipients', (select count(*) from public.task_recipients tr where tr.task_id = t.id),
+      'targets', (select count(*) from public.task_draft_targets d where d.task_id = t.id),
+      'unanswered', (select count(*) from public.task_recipients tr where tr.task_id = t.id and app.task_shop_state(t, tr.shop_id) in ('unanswered', 'returned')),
+      'pendingReview', (select count(*) from public.task_recipients tr where tr.task_id = t.id and app.task_shop_state(t, tr.shop_id) = 'pending_review'))
+    order by case t.status when 'draft' then 0 when 'published' then 1 else 2 end, t.due_at nulls last, t.created_at desc)
+    from public.tasks t where t.tenant_id = p_tenant), '[]');
+end $$;
+
+create or replace function public.api_task_office_get(p_task uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare v_t public.tasks;
+begin
+  select * into v_t from public.tasks where id = p_task;
+  if not found then perform app.fail('NOT_FOUND'); end if;
+  perform app.require_office(v_t.tenant_id, array['office_operator', 'office_approver', 'tenant_admin', 'auditor']);
+  return app.task_json(v_t) || jsonb_build_object(
+    'targets', coalesce((select jsonb_agg(d.shop_id) from public.task_draft_targets d where d.task_id = p_task), '[]'),
+    'recipients', coalesce((select jsonb_agg(jsonb_build_object('shopId', tr.shop_id, 'shopName', s.display_name,
+        'state', app.task_shop_state(v_t, tr.shop_id), 'lastRemindedAt', tr.last_reminded_at,
+        'acknowledgedAt', (select a.confirmed_at from public.acknowledgements a where a.task_id = p_task and a.shop_id = tr.shop_id),
+        'current', (select jsonb_build_object('revision', r.revision, 'payload', r.payload_json, 'status', r.status, 'submittedAt', r.submitted_at,
+                      'submittedBy', (select display_name from public.profiles where user_id = r.submitted_by),
+                      'proxyReason', r.proxy_reason, 'proxyChannel', r.proxy_channel, 'reviewNote', r.review_note)
+                    from public.responses r where r.task_id = p_task and r.shop_id = tr.shop_id and r.is_current),
+        'revisions', (select count(*) from public.responses r where r.task_id = p_task and r.shop_id = tr.shop_id))
+      order by s.display_name)
+      from public.task_recipients tr join public.shops s on s.id = tr.shop_id where tr.task_id = p_task), '[]'));
+end $$;
+
+select app.lock_down_functions();
