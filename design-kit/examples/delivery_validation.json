@@ -1,0 +1,89 @@
+{
+  "files": {
+    "logo_mark.png": {
+      "size": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA"
+    },
+    "pwa_icon_512.png": {
+      "size": [
+        512,
+        512
+      ],
+      "mode": "RGB"
+    },
+    "pwa_icon_192.png": {
+      "size": [
+        192,
+        192
+      ],
+      "mode": "RGB"
+    },
+    "favicon_32.png": {
+      "size": [
+        32,
+        32
+      ],
+      "mode": "P"
+    },
+    "apple_touch_icon_180.png": {
+      "size": [
+        180,
+        180
+      ],
+      "mode": "RGB"
+    },
+    "brand_board.png": {
+      "size": [
+        1536,
+        1024
+      ],
+      "mode": "RGB"
+    },
+    "logo_horizontal.png": {
+      "size": [
+        2172,
+        724
+      ],
+      "mode": "RGBA"
+    }
+  },
+  "font_families": {
+    "Newsreader.ttf": [
+      "Newsreader 16pt",
+      "Regular"
+    ],
+    "BIZUDPGothic-Regular.ttf": [
+      "BIZ UDPGothic",
+      "BIZ UDPゴシック",
+      "Regular"
+    ],
+    "NotoSerifJP.ttf": [
+      "Noto Serif JP ExtraLight",
+      "Regular"
+    ],
+    "BIZUDPGothic-Bold.ttf": [
+      "BIZ UDPGothic",
+      "BIZ UDPゴシック",
+      "Bold"
+    ]
+  },
+  "contrast": {
+    "#25372E / #F7F4EB": 11.47,
+    "#59685E / #F7F4EB": 5.35,
+    "#FFFFFF / #264D3C": 9.51,
+    "#4B3D1E / #F1DFAC": 8.0,
+    "#A03428 / #FBE9E4": 5.93,
+    "#748278 / #FFFFFF": 4.03,
+    "#9D452B / #F7F4EB": 5.75
+  },
+  "scope": "design deliverables only; no app runtime tests",
+  "utf8_txt": "passed",
+  "paths": "passed",
+  "embedded_specs": "identical",
+  "acceptance_criteria": 22,
+  "runtime_test": "not applicable; app not implemented",
+  "zip_validation": "CRC and complete entry list checked after packing"
+}

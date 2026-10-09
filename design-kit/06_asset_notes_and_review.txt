@@ -1,0 +1,65 @@
+Yorikado / 素材・セルフレビュー
+作成 2026-10-09 / v1.0
+
+1．制作方法
+ブランドボード、横組みロゴ、単体マークは画像生成スキルの組込み画像生成で新規制作・展開した。
+CLI/APIの代替画像生成は使っていない。PWA/Apple/faviconは単体マークから背景を紙色へ統一し、サイズを変換した配布用派生画像。
+横組みと単体マークには実際のalpha透明がある。PWA用は透過なし、purpose:any。maskableの安全領域認証を行った素材ではない。
+生成画像の色はHEX指定の近似で、画素ごとの厳密一致ではない。実装UIはdesign_tokens.jsonと03のHEXを使う。
+生成ロゴのワードマークはNewsreader系のアートディレクション。Newsreaderフォントそのもののアウトラインではない。UIでロゴを文字組み直す際は画像と一致しない可能性がある。
+
+2．画像の役割と寸法
+assets/brand_board.png：1536×1024、ブランドの演出資料。実アプリのスクリーンショットではない。
+assets/logo_horizontal.png：2172×724、透過RGBA、正式綴りYorikado。
+assets/logo_mark.png：1254×1254、透過RGBA、窓口の2かぎ形。
+assets/pwa_icon_192.png：192×192、紙色背景。
+assets/pwa_icon_512.png：512×512、紙色背景。
+assets/apple_touch_icon_180.png：180×180、紙色背景。
+assets/favicon_32.png：32×32、紙色背景。
+examples/ui-icons.svg：コードで構成した操作用の単純図形。ロゴのベクター版ではない。
+
+3．同梱フォント
+BIZ UDPGothic Regular/Bold：既存の同梱可能なファイルとSIL OFL原文を利用。可読性のため、過去作と共通でも本文書体だけを奇抜に変更しない。
+Newsreader：Google Fonts公式リポジトリから取得した可変フォントとOFL原文。
+Noto Serif JP：既存のOFLファイルと原文を利用。宣伝の見出しだけに使う。
+4つのフォントファイルの正式ファミリー名と読込可否をFontToolsで確認する。外部CDN不要。
+
+4．今回の自己点検
+商品：競合4件の公式情報を確認。支払意思は未検証として区別。市場で唯一とは宣伝しない。
+有料理由：店舗の単機能ではなく、事務局の集計・権限・精算・問い合わせ運用を含む。料金案は検証仮説。
+非重複：DayNet、RayLaw、Maqiriの仕様を比較。利用者・目的・色・主要レイアウト・ロゴ比喩が異なる。一部フォントは共通。
+デザイン：深緑・紙色・黄土。3入口、主ボタン1面＋2行。均等なKPIカードと定番3カラムを除外。
+ボード：大きい和文、1台のスマホ、開いたかぎ形と受付票で非対称に構成。人物素材なし。
+実装資料：01に技術、Windows、iPhone HTTPS、全画面仕様、データ・金額ルール、権限、エラー、22受入条件を収録。
+画像：目視でYorikadoの綴り、日本語の主要文言、マークの方向性を確認。32pxアイコンは輪郭と中央の空きが保たれることを確認対象にする。
+ファイル：UTF-8 TXT、PNG寸法、フォント、参照パス、ZIP展開とCRC、JSON/XMLの構文を検査し、examples/delivery_validation.jsonへ結果を保存。
+
+5．未実施・限界
+アプリ本体のコード、カメラ、銀行、外部券のAPI、実機iPhone、サーバーの原子性はまだ実装・テストしていない。今回のチェックは納品資料と素材の整合性であって、金券システムの品質証明ではない。
+参考ブランドを複製したものではないが、ロゴの完全な独自性や商標登録を保証しない。商標未確認。
+Astra_master_prompt_v4.txt原文は参照できなかった。チャットに提示された条件を適用。
+ブランドボードの紙の影、背景の街の線画、画面の細部は演出。03の正本と違う表示があれば03を優先する。
+
+6．画像生成プロンプト（再制作・引継ぎ用、英語原文）
+
+A 横組みロゴ
+Use case: logo-brand. Create a finished horizontal logo for a Japanese merchant cooperative smartphone product named "Yorikado". Exact wordmark text Yorikado (Y o r i k a d o), no tagline, no other words. Transparent background. Flat precise vector-like 2-color mark to left of editorial serif wordmark, restrained sophisticated warm commercial identity. Wordmark dark forest green #264D3C, inspired by readable Newsreader medium serif, carefully kerned, lowercase after capital Y. Mark is NOT a letter monogram: a bold abstract open service counter, two offset squared doorway/bracket forms making a central opening, upper left larger forest green form and lower right shorter muted ochre #C59B44 form. Simple solid strokes, softly eased corners, no house roof, no checkmark, no hands or people, no triangle. Excellent silhouette at 24 pixels. Overall generous breathing room, horizontally centered composition with mark same optical height as wordmark capital. No gradients shadows textures 3D or mockup. Wide output about 3:1. This is a standalone production logo asset.
+
+B 単体マーク
+Use case: background-extraction. Create the production standalone symbol from the reference Yorikado horizontal logo. Reference is identity source. Keep the exact two counter/bracket forms, their original orientation and relative positions: larger forest green upper-left opening toward lower-right and smaller muted ochre lower-right opening toward upper-left. Preserve contour, relative size, gap and proportions faithfully. Remove the Yorikado wordmark. Center just this original symbol in a square transparent canvas with generous safe margin, all mark geometry inside middle 64 percent of canvas. Flat color forest #264D3C and ochre #C59B44. No letters, no text, no extra motif, no shadow, no background. Genuine alpha transparency.
+
+C ブランドボード
+Use case: logo-brand / ui-mockup. Create a polished Japanese editorial brand board for Yorikado, a mobile service for local shopkeepers to redeem authorized local vouchers, reply to shopping street notices and contact their association office. This is one composed graphic poster, NOT a uniform grid of logo/font/color cards. Wide 1536x1024 or larger landscape.
+Input reference 1 = exact Yorikado horizontal logo. Keep wordmark spelling and two offset counter/bracket mark. Reference 2 = identical mark detail. Warm uncoated ivory #F7F4EB canvas, forest green #264D3C typography, restrained ochre #C59B44 and faint ruled lines #D3D9D1. No people, hands, photos, blobs, gradients, 3D spheres, blue or glassmorphism. No charts.
+Art direction: modern Japanese town service counter with the sophistication of a designed cultural poster; large generous asymmetric typography, an oversize cropped outline of the two brackets on the left as architectural framing, thin horizontal rules. Logo at upper left; a huge elegant Japanese Mincho headline on left-center, verbatim:
+"街の用事に、"
+"迷わない窓口。"
+Small supporting text verbatim:
+"商店と、商店街の事務局へ。"
+"券の受付から、報告・相談まで。"
+"二度書きを減らして、本業へ。"
+Below left, offset mini specimens integrated into the poster, not boxed equal cards: "Newsreader / BIZ UDPGothic", italic serif "Aa 0123", a paper coupon slip "地域券 500円" "見本", and three narrow color bars labeled "#264D3C" "#F7F4EB" "#C59B44". Small concept label "OPEN COUNTER".
+Right half: one dominant upright smartphone screen shown front-on, restrained thin dark frame no perspective. Real readable Japanese mobile UI with plenty of space; top tiny Yorikado logo, then "ひなた商店街" and large "山田商店". Tiny "デザイン見本".
+Exactly 3 main actions in this order: large deep forest button with a simple scan symbol and label "券を読み取る", supporting "地域券を受け付けます"; below two unboxed ruled rows, "報告・返事をする" with small badge "あと2件", and "事務局に相談する". Subtle link "地域券の入金予定を見る". Bottom nav only "ホーム" and "履歴". No charts or sidebar or other feature tiles. Beside the main phone add a smaller off-center receipt graphic with "受付完了" "500円" "見本" "事務局に自動反映". This is not a real transaction.
+At bottom right, a small flat product app icon using referenced two-bracket mark on cream square. Poster footer "Yorikado — 商店街の窓口". Hierarchy, whitespace and intentional scale contrast carry the design. Crisp exact Japanese lettering, preserve the specified text, no extra random labels or invented Latin words. A brand experience, not a presentation slide.
+

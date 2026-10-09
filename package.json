@@ -1,0 +1,42 @@
+{
+  "name": "yorikado",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Yorikado - 商店街の窓口（加盟店と事務局のWebアプリ）",
+  "engines": {
+    "node": ">=22.12.0 <23"
+  },
+  "scripts": {},
+  "dependencies": {
+    "@hookform/resolvers": "5.9.1",
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.117.3",
+    "@zxing/browser": "0.2.1",
+    "@zxing/library": "0.23.0",
+    "next": "16.4.0",
+    "papaparse": "5.7.0",
+    "pg": "8.23.1",
+    "qrcode": "1.5.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-hook-form": "7.89.0",
+    "sharp": "0.35.5",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.56.1",
+    "@types/node": "22.20.5",
+    "@types/papaparse": "5.5.2",
+    "@types/pg": "8.23.1",
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "eslint": "10.12.0",
+    "eslint-config-next": "16.4.0",
+    "supabase": "2.120.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.0.3"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "Yorikado",
+  "short_name": "ヨリカド",
+  "lang": "ja",
+  "start_url": "/m",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F7F4EB",
+  "theme_color": "#F7F4EB",
+  "icons": [
+    {
+      "src": "/brand/pwa_icon_192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/pwa_icon_512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

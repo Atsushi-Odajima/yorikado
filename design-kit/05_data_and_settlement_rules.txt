@@ -1,0 +1,132 @@
+Yorikado / データ・券受付・精算の実装仕様 v1.0
+
+1．共通ルール
+PostgreSQLを金額と状態の正本とする。金額は日本円の整数bigint、浮動小数点禁止。APIは安全な上限内の整数（取引上限1,000,000円、期間集計上限1,000,000,000,000円）として検証。
+UUIDを内部IDに使い、表示番号は組織内で一意な連番を別に持つ。連番の欠番を埋めるために取引を作らない。
+全日時はtimestamptz UTC、画面と締めはAsia/Tokyo。日付だけの回答はdate型。期間は開始以上・終了未満。
+名称・住所・本文は入力を保持。検索用文字列だけNFKC・空白統一等を行う。全角・異体字を本文で勝手に半角化しない。
+券番号・数値入力のみ明示した正規化（全角英数→半角、区切りハイフン除去）を許可。氏名・店名・口座名義の変換は別フィールドと確認画面を用いる。
+created_at、updated_at、version、actor_idを変更可能な業務表に持つ。versionによる楽観ロック。金銭確定後の履歴はappend-only。
+全業務行にtenant_id。関連FKはtenant_idとIDの複合FK。別組織のIDを渡すだけで参照できない。
+
+2．テーブル（最低限）
+tenants：id、name、slug、status(active/suspended)、timezone、contact、office_hours、reply_guidance、retention_policy_version。
+users：認証サービスのユーザーIDを参照。passwordを業務DBへ保存しない。
+memberships：tenant_id、user_id、role、status、version。unique(tenant_id,user_id,role)。
+shops：tenant_id、id、display_name、legal_name、address、status、external_code。連絡先と検索名を分ける。
+shop_memberships：tenant_id、shop_id、user_id、role(shop_staff/shop_owner)、status。複合unique。
+bank_accounts：tenant_id、shop_id、暗号化されたbank/branch/type/number/name、masked_suffix、version、status(pending/approved/rejected)、requested_by、approved_by、approval_evidence_id。変更時は旧版を残す。
+campaigns：tenant_id、id、name、mode(owned_qr/paper_count/external_csv)、environment(DEMO/LIVE)、status(draft/active/suspended/closed)、starts_at、ends_at、denominations、rules_text、rules_version、issuer、permission_evidence_id、live_approved_by、live_approved_at。
+campaign_shops：tenant_id、campaign_id、shop_id、eligible_from、eligible_until、status。
+issuance_batches：tenant_id、campaign_id、id、denomination、count、status(draft/generated/activated/void)、created_by、approved_by、encrypted_object_path、download_expires_at、activated_at。
+coupons：tenant_id、campaign_id、batch_id、id、token_digest、face_value、status(inactive/active/redeemed/void/retired)、valid_from、valid_until、redeemed_operation_id。token_digestはglobal unique。生のtokenは保存しない。
+receipt_drafts：tenant_id、id、shop_id、actor_id、campaign_id、coupon_ids、quote_amount、rules_version、expires_at、status(quoted/consumed/expired)。作成時だけ読み取ったtokenを検証し、以後は券IDを保持。
+operations：tenant_id、id、shop_id、actor_id、kind、idempotency_key、request_hash、status、result_ref、error_code、created_at。unique(tenant_id,actor_id,idempotency_key)。
+redemptions：tenant_id、id、operation_id、campaign_id、shop_id、amount、occurred_at、rules_version、status(confirmed/reversed)、receipt_number。unique(tenant_id,operation_id)。
+redemption_items：tenant_id、redemption_id、coupon_id、face_value。coupon_idの受付履歴は一生一回。取消で同じ券を再利用しない。
+reversals：tenant_id、id、redemption_id、reason、requested_by、approved_by、amount、settlement_adjustment_id、created_at。unique(redemption_id)。全額取消のみ。
+paper_reports：tenant_id、id、campaign_id、shop_id、received_date、denomination_counts、claimed_amount、photo_ids、original_bundle_ref、status(draft/submitted/returned/verified/rejected)、verified_amount、verified_by、version。
+external_imports：tenant_id、id、campaign_id、source_name、file_hash、status(staged/validated/committed/rejected)、mapping_version、actor_id、summary。外部決済APIではない。
+external_transactions：tenant_id、campaign_id、provider、provider_transaction_id、shop_id、amount、occurred_at、status(confirmed/reversed)、import_id、source_row。unique(tenant_id,campaign_id,provider,provider_transaction_id)。
+tasks：tenant_id、id、type(notice/event/closure/photo/shop_change)、title、body、schema_version、definition_json、due_at、status(draft/published/closed)、published_at。
+task_recipients：tenant_id、task_id、shop_id、assigned_at。公開時の対象店をスナップショットとして保持。
+responses：tenant_id、task_id、shop_id、revision、payload_json、status(submitted/returned/approved)、submitted_by、proxy_reason、submitted_at、reviewed_by。unique(task_id,shop_id,revision)。現在版参照は別列または制約付きビュー。
+acknowledgements：tenant_id、task_id、shop_id、user_id、confirmed_at、proxy_reason。明示操作時のみ作成。
+requests：tenant_id、id、shop_id、category、subject、status(received/in_progress/awaiting_shop/resolved)、assigned_to、resolution_note、resolved_at、version。
+request_messages：tenant_id、request_id、id、author_id、visibility(shop/internal)、body、attachment_ids、created_at。内部メモは店のAPIへ返さない。
+attachments：tenant_id、shop_id、parent_type、parent_id、object_path、mime、size、sha256、scan_status、created_by。publicバケット不可。
+settlement_batches：tenant_id、id、campaign_id、period_start、period_end、status(draft/review/approved/exported/partially_confirmed/confirmed/exception)、prepared_by、approved_by、frozen_at、hash、version。
+settlement_lines：tenant_id、id、batch_id、shop_id、bank_account_version、gross_amount、reversal_amount、net_amount、status、expected_date。unique(batch_id,shop_id)。
+settlement_sources：tenant_id、line_id、source_type、source_id、signed_amount。unique(tenant_id,source_type,source_id)。同じ実績を2つの精算に含めない。
+bank_result_imports：tenant_id、id、file_hash、uploaded_by、reviewed_by、status、created_at。
+bank_results：tenant_id、import_id、settlement_line_id、bank_reference、amount、result(success/failed)、executed_date。unique(tenant_id,bank_reference)。
+audit_events：tenant_id、id、actor_id、acting_for_shop_id、action、entity、before_summary、after_summary、request_id、occurred_at。token・口座全桁・パスワードを含めない。更新削除権をアプリへ与えない。
+outbox：tenant_id、id、kind、entity_id、recipient_id、dedupe_key、status、attempts、next_attempt_at。unique(dedupe_key)。
+notifications：tenant_id、recipient_id、entity_id、title、read_at。機微情報をpush本文へ含めない。
+live_readiness：tenant_id、campaign_id、issuer_authority、rules_approved、security_reviewed、pilot_completed、legal_review_ref、two_person_approval、evidence_ids。単に環境変数だけでLIVEへ移行できない。
+
+3．権限
+shop_staff：担当店舗の券受付、依頼回答、相談、当該店の履歴。口座や事業設定は不可。
+shop_owner：staffに加え、当該店の利用者招待申請・口座変更申請・取消申請。承認や銀行結果の確定は不可。
+office_operator：所属組織の店舗支援、依頼配信、相談、原本確認、精算案作成、代理入力。自作の重要処理を自己承認不可。
+office_approver：同組織の精算・取消・口座・発行・LIVE審査の承認。他者が準備した処理のみ。重要操作はMFA直近5分。
+tenant_admin：アカウントと組織設定、権限付与、停止。金額の直接編集権ではない。最後の管理者を削除不可。
+auditor：許可された履歴の読み取り、マスク済み出力のみ。
+複数役割は許可するがprepared_by != approved_byは常に実ユーザーIDで判定。事務局1名で別人確認できない場合はLIVE精算を開始しない。
+初期は連合会の横断閲覧を実装しない。複数組織へ所属して切替できるがデータを合算しない。将来は明示的共有契約と別権限で追加。
+認証JWTの権限表示だけを信用せず、DB上のactive membershipと店舗所属を各要求で確認。RLSは公開schemaとStorageにも適用。
+SECURITY DEFINER関数は必要箇所だけ、search_path固定、auth.uid()からの所属検証、PUBLIC実行権剥奪、入力のtenant信頼禁止。service-roleキーはサーバー専用で、通常のユーザーCRUDに乱用しない。
+
+4．独自QR券の発行
+固定額面券、JPY、額面1〜100,000円、1事業最大3額面、1回の受付1〜10枚、1取引上限1,000,000円。部分使用、残高、釣銭、合算ウォレットは実装しない。
+tokenはCSPRNG128bitをCrockford Base32の26文字に符号化。QR文字列はYK1:にtokenを続ける。個人情報や金額をQRへ直接入れない。券の表示番号は秘密tokenと分ける。
+DBはHMAC-SHA256(token, server-only pepper)を保存。鍵の版を持ち、移行中は旧版を検証可能にする。生tokenのログ、解析サービス送信、URLクエリ化は禁止。
+初期バッチ上限200枚。DEMO券に大きく「練習用・換金不可」。バッチ生成は二段階：まず全券inactiveと暗号化済み印刷用データを作成、担当者が取得・枚数照合後、別担当がactivate。印刷失敗・破棄時はvoid。ファイル取得だけではactivateしない。
+配布用データはAES-256-GCMで暗号化し、鍵はサーバーsecret、private storageで最長24時間、取得URL有効60秒。再取得は期限内・権限検査・MFA・監査が必要。期限後の再発行は旧バッチをvoidにして新tokenを生成。
+コピーされたQRを完全防止するとは言わない。最初の有効受付のみ成功し、紛失・流出時はバッチ停止/失効と調査を行える。
+一度使って取消した券はretiredのまま。消費者へ返す必要がある場合は発行者が別券を再発行する。v1に消費者への現金返金はない。
+
+5．原子的な受付
+カメラで読み取ったtokenはブラウザメモリで一時保持、localStorageへ保存しない。
+POST receipt-drafts：所属店と有効事業を確認し、token digestから券を取得、枚数・金額・規則版を見積もる。draftは本人・店舗に束縛し120秒で期限切れ。券を予約・使用済みにはしない。
+確認画面の確定はdraftId、expectedAmount、idempotencyKeyを送る。idempotencyKeyはブラウザが発行するUUID。端末保存できるのは機微情報のないoperationId/draftIdのみ。
+DB内の1トランザクションで次を行う。
+ a 所属と操作権限を再検査。既存idempotencyKeyがあればrequest_hash一致時は元結果を返す。不一致は409。
+ b draftをロックし、本人・店・未使用・期限を確認。既に確定した同じoperationは期限切れでも元結果を返す。
+ c campaignと対象券を固定順でロック。事業active、LIVE条件、サーバー時刻、店適格性、全券active、規則版、金額を再検査。
+ d 1枚でも不適格なら全体失敗。部分成功は禁止。
+ e redemptions/items挿入、couponsをredeemedへ、draft consumed、operation confirmed、監査、報告集計の参照元を同時確定。
+ f outboxを同じトランザクションで挿入。通知処理自体は後続ジョブ。
+DB確定前に成功を返さない。DB関数を分割して片方だけ成功する構造は禁止。
+同一券の別店舗からの同時受付は成功1件だけ。ユニーク制約とrow lockの両方で守る。UIのボタン無効化だけに頼らない。
+明確な業務エラーは失敗として返し、使用済み等の理由を表示。ネットワーク失敗は結果不明であり新しいkeyで再発行しない。
+GET operations/{id}を2、5、10、20秒で照会し、以後は利用者の再照会。リロード後も自分のdraft/operationから復帰。
+未確定を確認した場合だけ同じdraft・keyで再試行。draft期限切れなら、当該operation未確定を確認した後に読み直す。オフライン受付やバックグラウンドの自動後払い送信は禁止。
+レスポンスの利用済み情報は、他店の店名等を漏らさず「使用済み、事務局へ確認」とする。自店取引だけ詳細リンクを返す。
+
+6．紙券
+一意な券のない紙券は、受取日・額面別枚数・写真・原本束番号を記録。合計は整数で再計算。
+paper_reportのsubmittedは申告受付であり、券の使用済み登録でも換金確定でもない。紙原本を規則通り回収・確認してoperatorがverifiedにする。
+claimed_amountとverified_amountが違えば理由を保存、店舗が差戻し内容を確認する。確認済みの原本束番号は同一事業で一意。
+同じ写真hashは重複候補として注意表示するが、写真だけで同一紙券の完全判定はできない。
+原本のあるなし・保管場所・返却状態を記録。会計証憑の法律上の保存要件を一律に満たすと表示しない。
+
+7．外部CSV
+Yorikadoが受け付ける標準列：provider, provider_transaction_id, shop_external_code, amount_jpy, occurred_at, status, original_transaction_id。
+statusはconfirmed/reversed。正のamount、ISO8601のタイムゾーン必須。1ファイル10MB/10,000行、UTF-8（BOMあり可）のみ。Excelの桁落ち・日付変換を検出。
+取り込みはupload→列・文字コード検査→マッピング→エラー行一覧→件数と金額プレビュー→確定の順。エラーがあれば全体未確定。
+既存の同一キー・同一内容はskip。同一キー・異なる内容はconflictとして止める。ファイルhashが同じなら既存結果を示し、二重登録しない。
+unknown shopは手動で正しい店舗へ対応付け。異なる組織へ割当不可。
+reversedは元取引が必要。取消累計が元額を超えない。v1は全額取消のみ、部分取消行はunsupportedとして受付不可。
+取り込んだ記録は外部実績であり、本アプリが外部券を消化した証明にはしない。提供元の正式データと記録責任者を保存。
+
+8．精算
+独自QR confirmed、確認済みpaper、取り込み済みexternalのみを原資にする。同一事業の方式は混在させず、店×事業×期間で集計。
+額面合計－未精算の全額取消＝net。v1の独自手数料は0。税を地域券額面に再計算しない。商品の税務売上は本アプリの責務外。
+締めは事業設定のmonthly（末日JST、翌月1日00:00exclusive）または明示期間。初期標準monthly。精算予定日は事務局が入力、祝日の自動銀行営業日判定は初期なし。
+draft作成時に対象sourceを固定、review時に未確定例外・重複・口座承認版・対象期間を検査。別担当がapprovedにする。
+承認時にline合計とsources合計一致をDBで検査し、対象口座版と内容hashを固定。出力後の口座変更を既存精算へ黙って反映しない。
+支払作業票CSV出力はexported。「銀行取込用ファイル」ではない旨を画面・READMEへ明記。銀行固有の全銀・API・自動送金は別実装。
+銀行側の振込結果を標準列line_id, bank_reference, amount_jpy, result, executed_dateへ取り込み。銀行の元ファイル・処理日・担当者も保存。金額・店・明細ID一致を確認し別担当が確定。
+successで全額一致した行のみ振込結果確認済み。failed、不足、過払い、未到着、不明行はexception。1ファイル成功でも全行成功とはしない。
+再出力は同じバッチ番号/同じ内容hashと「再出力」を明記し、銀行で重ねて実行しないよう表示。入金成功済み行は新しい支払作業票へ含めない。
+取消：精算確定前なら新しい精算版へ再計算し再承認。承認済み/出力済みを直接変更しない。必要なら当該支払作業を保留し、銀行結果を確認してから調整。
+支払後取消は負の調整記録を次期に作り要確認へ。店口座から自動引落しも自動相殺も行わない。回収・相殺の運営判断と証跡を別承認してから調整を解消する。
+地域券の受付、事務局の確認、支払作業票、銀行の成功結果、店の入金申告は別状態として保持。
+
+9．回答・相談の履歴
+依頼の公開版と対象店を固定。回答は1店1現在版、改訂履歴を保持。回覧の確認は押下時だけ。
+写真報告と店情報変更は事務局承認が必要。イベント/休業/回覧は送信後accepted相当（responsesではapproved）へ。ただし処理終了と勘違いしない「回答済み」の表現にする。
+催促：公開済み未回答だけ。09:00〜18:00JST、1依頼1店舗24時間1回、同店合計1日1通知へまとめる。送信直前も回答済みか再確認。
+代理入力にはoperator、元店舗、電話/紙等の理由、日時を必須とする。原本人になりすました監査記録を作らない。
+相談の内部メモはoffice専用。写真URLは本人/担当店/所属事務局のみ60秒署名URLで閲覧。解決後30日以内は店舗から再開、以後は新相談として元IDを関連付ける。
+
+10．添付・保存・運用
+JPEG/PNG/WebP、原本1枚10MB、最大3枚、サーバーでMIMEとデコードを検査、長辺2400pxへ正規化、EXIF位置情報削除。HEICは初期サーバー変換を実装しないので、端末がJPEGを供給しない場合は対応形式への変換案内を出す。iPhone実機で撮影アップロードを必ず検証する。
+アップロード先は一時隔離、検査・再エンコードが通るまで他ユーザーへURLを出さない。HTML/SVG/実行形式を受け付けない。
+業務情報をlocalStorageやService Workerへ保存しない。MFA秘密、券token、銀行全桁、相談本文をanalyticsへ送らない。
+保存期間の初期製品設定：取引・精算・監査7年、回覧・回答・相談2年、写真1年、失敗ジョブログ90日、セキュリティログ180日。これは法律上の保存義務を断定した値ではない。契約前に責任者が保存方針を確定し、legal hold対象は削除しない。
+期限削除は対象一覧→承認→実行→監査。金銭行を通常CRUDで削除不可。退会で履歴を消さずアクセスを失効、個人連絡先は保存方針に従って匿名化。
+DBバックアップ毎日、PITRを提供する有料構成をLIVEの前提とする。添付も独立して日次バックアップ。初期の運用目標RPO24時間/RTO8時間。復元実測なしに達成済みとしない。
+組織ごとにJSON/CSV/添付のエクスポートができる。券の生tokenや暗号鍵はエクスポート対象外。CSVの先頭=,+,-,@および制御文字による式注入を防止し、原文は別の安全なJSONに保持。
+DEMOとLIVEは別Supabaseプロジェクト・別Storage・別secret・別ドメイン。画面バッジだけの分離にしない。DEMOリセットはDEMO環境ガードと再確認を実装し、LIVEで操作を拒否。

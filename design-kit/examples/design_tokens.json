@@ -1,0 +1,82 @@
+{
+  "brand": "Yorikado",
+  "version": "1.0",
+  "colors": {
+    "canvas": "#F7F4EB",
+    "surface": "#FFFFFF",
+    "ink": "#25372E",
+    "muted": "#59685E",
+    "primary": "#264D3C",
+    "onPrimary": "#FFFFFF",
+    "primaryHover": "#1E3E30",
+    "primaryActive": "#173225",
+    "selectedSurface": "#EAF0E5",
+    "line": "#D3D9D1",
+    "controlBorder": "#748278",
+    "ochre": "#C59B44",
+    "badgeSurface": "#F1DFAC",
+    "badgeText": "#4B3D1E",
+    "focus": "#9D452B",
+    "success": "#264D3C",
+    "warning": "#825714",
+    "error": "#A03428",
+    "disabledSurface": "#E1E4DF",
+    "disabledText": "#637067"
+  },
+  "spacing": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64
+  ],
+  "breakpoints": [
+    360,
+    768,
+    1024
+  ],
+  "container": {
+    "merchantMax": 480,
+    "officeMax": 1200,
+    "merchantPadding": 16,
+    "smallPadding": 12
+  },
+  "radius": {
+    "primary": 13,
+    "input": 9,
+    "dialog": 16
+  },
+  "sizes": {
+    "button": 58,
+    "secondaryButton": 48,
+    "homeVoucher": 126,
+    "input": 56,
+    "icon": 24,
+    "scanIcon": 32,
+    "minTouch": 44
+  },
+  "type": {
+    "body": {
+      "family": "BIZ UDPGothic",
+      "size": 18,
+      "weight": 400,
+      "lineHeight": 1.65,
+      "letterSpacing": 0
+    },
+    "heading": {
+      "size": 26,
+      "weight": 700,
+      "lineHeight": 1.4
+    },
+    "amount": {
+      "size": 40,
+      "weight": 700,
+      "lineHeight": 1.2
+    },
+    "brandFamily": "Newsreader",
+    "displayJapanese": "Noto Serif JP"
+  }
+}

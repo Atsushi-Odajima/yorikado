@@ -1,0 +1,533 @@
+Claude Codeへの完全版開発指示 / Yorikado（ヨリカド）v1.0
+作成日：2026-10-09 JST
+
+あなたは、商店街の加盟店と事務局が使うWebアプリYorikadoを実装するエンジニアです。この指示の範囲を実装し、テスト・実行手順・未完了事項をファイルに残してください。仕様の提案だけで止まらず、動くコードとデータベースを作ってください。
+ただし、このTXTを作成した段階ではアプリは未開発です。以下はこれから実装する要件であり、動作保証の報告ではありません。
+
+0．読み方と作業原則
+同梱R10_Yorikadoをdesign-kit/としてリポジトリへ置く。画像はdesign-kit/assets/を参照し、Webで必要な素材をpublic/brand/とpublic/fonts/へコピーする。
+本TXTの後半にはUI仕様とデータ・精算仕様の全文が含まれる。このTXTだけでも機能・判定ルールは読める。画像そのものはZIP内のassetsが必要。
+既存リポジトリで作業する場合、まずAGENTS.md、README、依存・構成・未コミット差分を確認。既存機能・ユーザー変更を削除しない。新規なら下記の構成で作る。
+優先順位：この指示の金銭・権限・状態定義＞UI数値仕様＞ブランドボードの見た目。画像内のボタンや文字の違いを追加機能と解釈しない。
+最新仕様を公式文書で確認し、採用した依存versionをlockfileとdocs/DEPENDENCIES.txtへ固定する。最新タグを本番起動時に取得する構成にしない。
+仮実装と本物の処理を混在させない。UIだけの成功、localStorageだけの永続化、秘密鍵のクライアント配置、未接続APIを接続済みに見せる行為は禁止。
+通常の実装判断はこの仕様内で進める。実在する発行者・銀行・外部券提供元の接続条件は捏造せず、未接続のまま機能ゲートを閉じる。
+
+1．商品とユーザー
+商品：地域券の受付、商店街への報告・返事、事務局への相談をスマホで済ませる加盟店窓口。
+利用者：PCを普段使わない店主・店員、商店街事務局の職員、承認担当者、監査担当者。
+契約者：商店街・連合会・地域券事務局。商工会議所は紹介・導入支援の協力先になり得るが、自動的な全組織データ閲覧権を持たない。
+主なユースケース：会計時に地域券を受け付ける／イベントの出欠を返す／回覧を確認する／休業日を届ける／ポスター写真を提出する／券や入金の不明点、街灯・清掃の相談を送る／事務局が換金対象を承認して銀行結果を照合する。
+店舗の売上全体・給与・仕入れ・SNSの管理アプリに拡張しない。
+
+2．初回販売版の範囲（必須）
+F01 招待制認証、複数所属店舗の切替、役割別アクセス。
+F02 店舗ホームの主要入口3つと履歴・入金補助導線。
+F03 独自QR額面券：事業設定、対象店、二段階発行、有効化、カメラ/画像/番号で読取、複数枚確認、原子的受付、二重利用防止、全額取消申請と承認。
+F04 紙券：枚数・額面・写真・原本束番号の申告、原本確認、差戻し、換金対象の確定。
+F05 外部券の実績CSV：標準列へのマッピング、行検証、重複/差分、プレビュー、確定。外部券の決済そのものではない。
+F06 5種類の依頼テンプレ：回覧、イベント出欠、休業日、写真報告、店舗情報変更。未回答、期限、代理入力、改訂履歴。
+F07 店舗と事務局の非公開相談、写真、担当割当、内部メモ、状態変更、解決と再開。
+F08 券実績集計→精算案→別担当承認→支払作業票→銀行結果記録・照合→明細。状態を区別。
+F09 店舗登録、口座変更の申請/別担当承認、監査、組織分離、データ出力。
+F10 アプリ内通知と事務局が設定したメール通知。ジョブ再試行、重複送信防止、催促の頻度制限。
+F11 PWA manifest、ホーム画面追加、オフライン案内、ローカルフォント。機密業務のオフライン処理はしない。
+F12 DEMOデータ、DEMO/LIVEの物理環境分離、実券の開始条件を満たした場合のみ管理者がLIVEを有効化できる構造。
+
+3．今回実装しないもの
+外部PayPay/region PAY/chiicaの非公開API、残高ウォレット、券購入・チャージ・換金所、銀行への送金実行、銀行固有の全銀ファイル、消費者アプリ、本人間送金、クレジットカード保持。
+POS、会計・税申告、補助金の自動申請、AIによる精算承認、AI法律判断、広告、音声の独自文字起こし、LINE連携、Web Push、一般SNS、公開掲示板。
+初期はネイティブiPhoneアプリ・App Store公開・Androidネイティブを作らない。APIとドメイン層を分け、後日Swift等から使える余地を保つ。
+連合会の全商店街横断分析、大規模マイクロサービス化、各銀行への個別接続は後続。未実装項目を画面の大量の「近日公開」タイルにしない。
+
+4．技術構成
+モジュール分割した単一Webアプリ。TypeScript strict、Next.js App Router（実装時にサポートされる安定版、調査時は16系）、React対応版。
+DB/Auth/Storage：Supabase PostgreSQL、Supabase Auth、private Storage。全テーブルとStorageへRLS。スキーマとDB関数はSQL migration管理。
+UI：CSS Modules＋CSS変数。汎用SaaSテーマを貼らない。必要なdialogはアクセシブルなライブラリを限定利用し、依存を記録。
+フォーム：React Hook Form＋Zod（サーバーでも再検証）。金額計算はドメイン関数とDB整数。
+QR：@zxing/browser等、iOS Safariで動く実績あるdecoderを公式で確認し採用。BarcodeDetector専用にせずfallbackを持つ。読取映像はブラウザ内だけ。
+CSV：実績あるparserで引用符/改行を扱う。JSON schema version=1、日時・数値検証。SQLの文字列連結は禁止。
+印刷：発行バッチはA4にQRと表示番号・額面・有効期間・発行者・練習表示をHTMLで描画し印刷可能にする。PDF自動生成は必須にせず、ブラウザ印刷でPDF保存できる。QR印刷の実読取検証必須。
+メール：provider adapterを設け、開発はSupabaseローカルのメール受信箱またはテストsink。本番は運営が用意するSMTP等の正規契約のみ。送信ドメインと秘密値は環境設定。
+テスト：Vitest、PostgreSQL/Supabase統合テスト、Playwright Chromium/WebKit、axeの自動検査＋手動iPhoneテスト。
+Node.js：実装開始時点で利用中のNext.js/Supabase CLIがサポートするNode 22系の最新セキュリティ版を基準。EOL等が変わった場合はサポートされるLTSへ変更し理由を記録。
+ホスト：Next.js互換のサーバーホスト。確認用はVercel＋別のSupabase DEMOプロジェクトでよい。商用の料金プラン・規約・バックアップ機能は導入時点で確認し、無料枠を商用SLAにしない。
+大きいバッチはAPI要求内で回し続けず、DB outboxと定期job runnerで処理。初期上限（200枚・10,000CSV行）を超えるなら明示拒否。
+
+5．プロジェクト構造
+src/app/(auth)/login、invite
+src/app/(merchant)/m と各子画面
+src/app/(office)/o と各子画面
+src/app/api/v1/** のRoute Handlers
+src/domain/{vouchers,settlements,tasks,requests,identity}
+src/server/{auth,db,storage,jobs,notifications,adapters}
+src/components/{merchant,office,forms,feedback}
+src/styles/{tokens.css,global.css}
+public/brand、public/fonts、public/manifest.webmanifest、public/sw.js、public/offline.html
+supabase/migrations、supabase/seed.sql（DEMO専用）
+tests/{unit,integration,e2e}、scripts/{seed-demo,run-jobs,export-tenant,verify-env}
+docs/{SETUP_WINDOWS.txt,DEPLOYMENT.txt,DATA_MODEL.txt,SECURITY.txt,OPERATIONS.txt,TEST_REPORT.txt,HANDOFF.txt,DEPENDENCIES.txt,LICENSES.txt}
+design-kit/ は配布された設計書・画像・ライセンス。
+OpenAPIはdocs/openapi.yaml、サンプルCSVはexamples/。srcからdesign-kitの絶対ローカルパスへ依存しない。
+
+6．ログイン・セッション
+メール＋パスワード、招待メールで初期登録。公開の任意テナント新規作成はなし。事務局が店舗へ招待し、有効期限72時間・単回使用。使用後は同じリンクで権限を再付与しない。
+認証はBFF方式：サーバーでSupabase Authに接続し、セッションcookieはSecure/HttpOnly/SameSite=Lax。本番HTTPへトークンを送らない。ブラウザlocalStorageにtokenを保存しない。
+短期アクセストークンは公式Authの推奨を守り更新。アプリで記録するsessionの絶対期限は店舗7日、事務局8時間。重要操作はMFAを直近5分以内に再確認。完全ログアウト・端末紛失時の失効機能。
+事務局・承認・管理者はTOTP MFA必須。口座変更申請を行う店主もその操作前にMFAを登録・検証。通常の毎回の券受付にMFAを挟まない。
+POST/PUT/DELETEはOrigin/Host検査とCSRF対策。GETに状態変更を置かない。
+招待・復旧はアカウントの存在を無用に漏らさない表示。ログイン・券照会のレート制限を共有DB/共通ストアで適用（プロセス内だけ禁止）。
+暫定制限：ログイン10回/15分/IP＋アカウント、券番号照会30回/分/利用者、確定30回/分/利用者。正当な繁忙運用を実証で調整。失敗率が高い場合は事務局へ警告。
+
+7．API契約
+APIベース /api/v1。全要求で認証・所属・対象リソースの権限。tenantId/roleを受信してそのまま信用しない。
+共通成功 {data, requestId}、失敗 {error:{code,message,fieldErrors?,retryable},requestId}。金額等の機微情報をURLへ入れない。
+主なエラー：UNAUTHENTICATED401、FORBIDDEN403、NOT_FOUND404、VALIDATION422、CONFLICT409、ALREADY_USED409、EXPIRED409、UNSUPPORTED422、RESULT_PENDING202、RATE_LIMITED429、SERVICE_UNAVAILABLE503。
+ネットワーク不明はHTTPエラーコードを推測せずUIでunknown。許可されない他組織リソースは存在を推測させない404。
+
+GET /me：本人、許可組織と店舗、役割。口座詳細は返さない。
+GET /merchant/home?shopId=：対応中券事業、未回答件数、本人向け通知。
+POST /receipt-drafts：{shopId,campaignId,tokens[]}→{id,expiresAt,shopName,campaignName,items,amount,rulesVersion}。
+POST /redemptions：{draftId,expectedAmount}、Idempotency-Key必須→operationとreceipt。確認前にserver amountを再検査。
+GET /operations/{id}：本人が関与したoperationだけ。pending/confirmed/failedとreceiptを返す。
+POST /redemptions/{id}/reversal-requests：理由。承認はPOST /reversals/{id}/approve、別担当とMFA。
+GET/POST /paper-reports、POST /paper-reports/{id}/submit、review/return：05の状態遷移を厳守。
+GET /tasks、GET /tasks/{id}、POST /tasks/{id}/responses（version、payload、idempotency）、POST /tasks/{id}/acknowledge。
+POST /office/tasks、publish、close、remind、proxy-response。公開済み定義の直接上書き不可。
+GET/POST /requests、POST /requests/{id}/messages、PATCH /requests/{id}（expectedVersion）。内部メモはoffice-only endpoint。
+POST /attachments/upload-intent、POST /attachments/{id}/finalize、GET /attachments/{id}/download：private、親リソース権限。
+GET/POST /campaigns、approve-live、issuance-batches、download、activate、suspend。発行と有効化は別担当。
+POST /imports/external（stage）、GET /imports/{id}、POST /imports/{id}/commit：プレビューと確定を分離。
+POST /settlements/generate、submit-review、approve、export-worklist、import-bank-results、confirm-bank-results。
+GET /settlements、GET /settlements/{id}：店主は自店のlineと必要項目のみ。
+POST /shops、invitations、bank-change-requests、approve-bank-change。利用者管理はtenant admin制限。
+GET /audit、POST /exports/tenant、GET /exports/{id}。エクスポートURLも権限と期限が必要。
+POST /internal/jobs/run：cron署名secretを検証し、通常利用者には403。outboxをロックしてclaim、指数backoff最大5回、超過はfailed queue。二重通知を抑制。
+取引を伴わない作成APIもidempotencyKeyを持つ。リトライで相談・回答・発行を増殖させない。
+
+8．設定・秘密値
+.env.exampleへ説明付きで、値は架空/空欄：APP_ENV=demo、APP_BASE_URL、SUPABASE_URL、SUPABASE_PUBLISHABLE_KEY、SUPABASE_SECRET_KEY、COUPON_HMAC_KEY、EXPORT_ENCRYPTION_KEY、JOB_RUNNER_SECRET、MAIL_PROVIDER、SMTP_*。
+鍵はCSPRNG256bit以上で生成し環境へ設定。KEYにNEXT_PUBLIC接頭辞を付けない。鍵ローテーション用versionと旧鍵保持手順を記録。
+本番起動時verify-envで足りない値・DEMO/LIVE不一致を検知。秘密値をログへ表示せず止まる。鍵なしでもそれらしい成功を返さない。
+外部接続adapterは初期NONE。公式契約がないサービスにスクレイピング・個人ログイン・勝手なAPI探索をしない。
+LIVE用の発行者情報等はDBの事業設定に保存し、認証秘密と分離。実在組織の契約・審査・振込をこの開発プロンプトだけで代行しない。
+
+9．PWAとiPhone
+manifest name=Yorikado、short_name=ヨリカド、lang=ja、start_url=/m、scope=/、display=standalone、theme/background=#F7F4EB。
+アイコン192/512はpurpose:any、apple-touch-iconは180。安全余白を保ち、maskableとして偽装しない。
+Service Workerは公開のapp shell、ロゴ、フォント、offline.htmlのみをキャッシュ。/api、/auth、/m、/o、相談添付、精算CSV、QRデータ、認証レスポンスはキャッシュしない。
+オフライン時は「通信が必要です」。券受付を保存して後から自動送信しない。ホーム追加は任意、初回に強制しない。
+iPhone Safariは共有→ホーム画面に追加の短い案内。beforeinstallpromptだけに依存しない。通知許可の要求はv1では不要。
+カメラはHTTPS＋ユーザー操作・許可で開始。playsInline、背面camera優先。端末回転・バックグラウンド・画面ロック・復帰、拒否、カメラ利用中を実機検証。
+HTTPのLAN-IPは画面レイアウト確認まで。iPhoneのカメラ受入テストは正規HTTPSのDEMOで行う。証明書警告を無視させる説明は禁止。
+QRを写真から読む場合も端末内decode。画像を外部AIに送らない。
+
+10．Windows 11からの実行手順を必ず提供
+開発PC：Windows 11、Git、上記Node LTS、VS Code等。ローカルDB利用にはDocker Desktop/WSL2の対応環境を準備し、組織のライセンス条件を確認。
+アプリを作った後、PowerShellで次のスクリプトが実在し動作するようpackage.jsonを用意する。
+  npm ci
+  Copy-Item .env.example .env.local
+  npm run db:start
+  npm run db:reset:demo
+  npm run dev
+db:startはプロジェクトに固定したSupabase CLIでsupabase startを実行。起動時に表示されたローカルURL/公開キー/サーバー用キーを.env.localへ設定する順序もREADMEへ記す。
+db:reset:demoはAPP_ENV=demo、localhostのDB/Storage、確認フラグを検証してから実行。LIVEへresetできるスクリプトを提供しない。
+別ターミナルで npm run jobs:dev。ブラウザhttp://localhost:3000でDEMOへ。メール招待はローカル受信箱の実際のURLを起動結果から案内。
+Dockerを使えない時は専用Supabase DEMOプロジェクトでmigration/seedを行う手順を用意。LIVEへseedしない。
+  npm run lint
+  npm run typecheck
+  npm run test
+  npm run test:integration
+  npm run test:e2e
+  npm run build
+存在しないスクリプトを文書だけに記載しない。テストデータは.env.testからDEMO専用接続へ限定。
+
+11．iPhoneで触れるまでの公開準備
+ユーザーのVercelまたは同等ホストへアプリ、専用Supabase DEMOへDB/Auth/Storageを準備。Git履歴へ秘密値を含めない。
+HTTPSの固定DEMO URLを得てAPP_BASE_URL、Auth Site URL、許可callback URLを一致させる。preview wildcardへ本番認証を許可しない。
+migrationを適用し、DEMO店舗・権限・券をseed。自動ジョブの設定、メールテストsinkを確認。
+DEMO画面は常時練習表示、架空店・架空券のみ。公開ルートで業務データを閲覧できないことを確認。ユーザーが共有したい範囲へ招待する。
+ホストの保護画面とアプリログインが干渉する場合は構成を記録し、保護を無断で弱めない。
+公開URLをSafariで開き、QR、文字拡大、戻る、ホーム追加、セッション復帰を実機検証。未実施はTEST_REPORTに未実施と書く。
+この指示自体は勝手な実データ投入、第三者招待、実券有効化、銀行振込の許可ではない。まずレビューできるDEMOと公開手順を完成する。
+
+12．DEMO seed
+組織A：ひなた商店街、店：山田商店/さくら食堂。組織B：あおば通り会、店：青葉青果。すべて架空。
+担当：Aのstaff、owner、operator、approver、admin、Bのstaff。ユーザーは重複しない固定の架空テストID。既定パスワードをLIVEで有効にしない。
+独自QR事業：練習地域券、500円/1,000円、テスト実行日基準で有効券、期限切れ、使用済み、他事業、停止、対象外店のfixtures。静的な2026年の日付だけに依存させない。
+別事業に紙券申告2件、外部CSV1件（正常/重複/差分/不明店/数式注入のfixtureを分ける）。
+回覧、イベント出欠、休業、写真報告、店情報変更。未回答・回答済み・差戻しを用意。
+相談は受付・対応中・返事待ち・完了。事務局内部メモが店から見えないテスト。
+精算は未承認、承認済み、銀行結果不一致。金額は再計算できる小さい固定fixture。見た目のためのグラフ用乱数は作らない。
+
+13．テストとAcceptance Criteria
+AC01 非PC利用者向けホームに主要入口が3つだけ。320/375/390/430/768/1280pxで横スクロール・欠け・キーボード被りなし。
+AC02 文字200%、キーボード、VoiceOverで主要操作ができる。自動アクセシビリティ検査だけで完全準拠を宣言しない。
+AC03 実機iPhoneのHTTPSでカメラ許可/拒否/復帰、写真読取、番号入力が成立。実機がなければ未検証として納品し、本番開始のgateを閉じる。
+AC04 正常な券1枚と10枚の額面・合計が一致し、報告への再入力がない。
+AC05 2店舗同時・20並列の同一券受付で成功は1件だけ。残りは使用済み/競合。券状態とredemptionsの数が一致。
+AC06 二重タップ、同じkey再送、違うpayload再送、タイムアウト直前/直後、再読込で二重受付しない。確定済みのkeyは期限後も同じ結果を返す。
+AC07 複数枚中1枚の期限切れ等は全体ロールバック。金額・actor・shop・tenant・rulesVersionの改ざんを拒否。
+AC08 取消の自己承認不可、元券は再利用不可、元履歴を削除しない。出力/支払後の取消は要確認の調整となり勝手に銀行残高を変えない。
+AC09 紙券のsubmittedを換金額へ混入しない。原本確認額と申告額の差異・理由を追える。
+AC10 外部CSVの同じfile/row再取込は重複しない。異なる内容、別tenant店舗、不明店、部分取消、式注入、不正UTF-8・金額・日時は適切に拒否/隔離。
+AC11 精算sources合計＝各line合計＝batch合計。期間境界JST、取消、重複精算を含む。
+AC12 出力だけでは振込結果確認済みにならない。成功・失敗が混在する銀行結果、金額不一致、再取込、支払済みの再出力対象外を検証。
+AC13 回覧は開くだけで確認されない。イベント等の回答は店単位で1現在版、競合更新・代理入力履歴が残る。
+AC14 回答済みへの催促停止、通知job再試行で重複抑制。相談の内部メモ・添付が他店へ漏れない。
+AC15 role別APIとRLSを直接テスト。別組織ID、失効ユーザー、Storage URL、service-role誤用で越境できない。
+AC16 不正upload、MIME偽装、巨大ファイル、XSS、SQL注入、CSRF、session失効、MFA迂回をテスト。
+AC17 tenant exportのファイルがそのtenantだけ。監査に秘密token・銀行全桁を含めない。
+AC18 Service Workerとキャッシュに業務応答・認証・券情報が残らない。offlineで金券の成功が出ない。
+AC19 発行途中失敗時に券がinactiveのまま。取得期限・別担当有効化・破棄・再発行を検証。DEMO resetがLIVEを拒否。
+AC20 初回画面応答と確定操作の性能を記録。仮の負荷目標10req/sでAPI p95 1秒以内（外部メール処理除外）。達成しなければ測定環境・原因・改善を記録し、数字を捏造しない。
+AC21 backupから新しいDEMO環境へ復元し、行数・添付hash・精算合計が一致。目標RPO/RTOは実測と区別。
+AC22 build/lint/typecheck/主要統合テストを通し、パス・フォント・manifest・画像寸法が仕様と一致。
+
+14．実装順と完了の定義
+P1 基盤：構成、認証、RLS、roles、tokens、DEMO seed、ホーム。静的デザインだけで終えない。
+P2 縦に一巡：独自QR発行→受付→報告反映→精算案→別承認→作業票→銀行結果照合→店の明細。
+P3 回覧・回答・相談・代理入力、添付、催促。紙券と外部CSVを実装。
+P4 異常系・金銭/権限テスト、実機、バックアップ、運用、配布。
+工程ごとにdocs/HANDOFF.txtへ完了/未完了/テスト/ブロッカー/次の手順を記録し、次セッションのCodex等が続けられるようにする。
+時間切れなら実装範囲を隠して納品しない。未接続をチェックボックスだけで完了扱いにしない。
+
+15．開発完了時に作る販売用配布物
+ソースZIP（node_modules、.env、実顧客データ、秘密鍵を除く）、lockfile、SQL migrations、DEMO seed、サンプルCSV、ブランド画像・フォントとライセンス、OpenAPI、操作手順TXT、Windows手順TXT、運用・障害対応TXT、テスト結果TXT、引継ぎTXT。
+契約責任者が確認する利用規約・プライバシー・発行者向け役割分担の原案を別ファイルにし、法的完成品と表示しない。
+本番移行チェック：発行権限、券規則、データ保存責任、二人承認、バックアップ、現場実証、セキュリティ確認、担当窓口、インシデント対応。実券運用に必要な実務条件だけを確認し、不必要な画面操作を加盟店へ増やさない。
+最終報告：何が動くか、起動方法、DEMO URL（公開した場合）、実測テスト、未接続、費用が発生するサービス、残作業。口座や秘密値をチャットへ貼らない。
+
+16．ブランド素材参照
+design-kit/assets/brand_board.png：アートディレクション。
+design-kit/assets/logo_horizontal.png、logo_mark.png：実装用PNG。
+design-kit/assets/pwa_icon_192.png、pwa_icon_512.png、apple_touch_icon_180.png、favicon_32.png。
+design-kit/assets/fonts/：セルフホストフォント、design-kit/licenses/：OFL。
+design-kit/examples/design_tokens.json、ui-icons.svg、sample_external_transactions.csv、sample_bank_results.csv：設計補助。
+画像生成のプロンプトと素材の状態は06_asset_notes_and_review.txt。色・字形・ボタン配置の正本は後半の数値仕様。
+
+以下に、実装に必要なブランド/UI仕様とデータ/精算仕様を全文収録する。これらは本指示の一部である。
+
+
+━━━━━━━━ UI仕様全文 ━━━━━━━━
+
+Yorikado / ブランド・UI実装仕様 v1.0
+仕様日 2026-10-09
+
+1．デザインの正本
+画面の操作と寸法は本書、金額と状態は05、実装範囲は01を正とする。ブランドボードは空気感の参照であり、アプリ画面のスクリーンショットではない。
+共通コンセプト：OPEN COUNTER。街の用事に、迷わない窓口。
+名称表記：Yorikado、和文ヨリカド。アプリ見出しの補足は「商店街の窓口」。独自にYORIKADO、YoriKadoへ変更しない。
+
+2．色
+canvas #F7F4EB / surface #FFFFFF / ink #25372E / muted #59685E
+primary #264D3C / onPrimary #FFFFFF / primaryHover #1E3E30 / primaryActive #173225
+selectedSurface #EAF0E5 / line #D3D9D1 / controlBorder #748278
+ochre #C59B44：ブランドマーク・小面積の装飾。白い小文字の背景にはしない。
+badgeSurface #F1DFAC / badgeText #4B3D1E
+focus #9D452B / success #264D3C / warning #825714 / error #A03428
+warningSurface #FFF0D0 / errorSurface #FBE9E4
+disabledSurface #E1E4DF / disabledText #637067
+機能上の入力枠には薄いlineでなくcontrolBorderを用いる。状態は色とラベル・記号を併用。
+v1はライトテーマのみ。ダークテーマ未実装でもOS設定で不可読にならないcolor-scheme:lightを設定。
+
+3．書体と文字
+UI本文・操作："BIZ UDPGothic", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif。
+欧文ブランド見出し："Newsreader", Georgia, serif。UI操作ラベルを英語へ変えない。
+広告の大見出しのみ："Noto Serif JP", serif。実務の長文・フォームはゴシック。
+同梱パス：assets/fonts/BIZUDPGothic-Regular.ttf、BIZUDPGothic-Bold.ttf、Newsreader.ttf、NotoSerifJP.ttf。
+Webfontはセルフホスト、font-display:swap。Regular400/Bold700のみを使い、BIZで存在しない500/600の実ファイルを指定しない。
+Newsreaderは可変フォント400〜600、広告はNoto Serif JP600。欧文イタリック見本はボード上の演出で、イタリックファイル未同梱。
+本文18px/400/line-height1.65/letter-spacing0。
+補足16px/400/1.6/0。日付・件数等14px/400/1.5/0（主要情報には使わない）。
+画面見出し26px/700/1.4/0。店名24px/700/1.5/0。主ボタン20px/700/1.4/0。
+金額40px/700/1.2/0、font-variant-numeric:tabular-nums。桁が長ければ32pxまで落とし、途中省略しない。
+PC事務局本文16px/400/1.65、見出し28px/700/1.4。表の金額右揃え。
+ラベルは実際の操作を言う。「送信」「実行」だけでなく「参加で回答する」「500円を受け取る」。
+
+4．空間・レイアウト
+spacing scale 4,8,12,16,24,32,48,64px。
+店舗ページcontainer max-width480px、左右16px、360px未満は12px。PCでも店舗画面を横に引き伸ばさない。
+事務局container max-width1200px、左右32px、768px未満16px。
+breakpoints 360/768/1024px。320pxから利用できる。固定高さで文字を切らない。
+店舗gridは1列。ホーム：店舗ヘッダー→主要操作1面→2行→入金予定リンク→下ナビ。
+事務局：上部組織名と役割、最大5トップタブ（対応待ち／地域券／依頼／相談／店舗）。設定は組織名のメニューへ。
+PCの精算詳細のみ主本文minmax(0,1fr)＋確認欄320pxの2列、gap32。1024px未満は縦に積む。3カラム禁止。
+border 1px solid、区切りの強調2px。radius：主操作13px、入力9px、dialog16px、紙の明細0px。
+shadow通常none。dialogのみ0 12px 36px rgba(37,55,46,.16)。ブランド画像の紙の影をUIへ常用しない。
+主ボタンmin-height58px。ホーム券ボタンmin-height126px。二次ボタン48px。タップ領域44×44px以上。
+input/select min-height56px、font-size18px。textarea min-height144px。アイコン24px、券の主アイコン32px。
+下ナビはホーム／履歴のみ、高さ64px＋safe-area-inset-bottom。本文に同じ高さ＋16pxの余白。横幅は店舗containerと一致。
+ヘッダーにハンバーガーで全機能を隠さない。店名から店舗切替とアカウント設定へ。アイコンには読み上げラベル。
+確認・入力画面は下ナビを省き「戻る」とページ内の確定操作を持つ。ソフトキーボードに確定ボタンが隠れないよう通常フローへ置く。
+
+5．インタラクション・状態
+hover：primaryHover、行背景selectedSurface。位置を動かさない。タッチでhoverを要求しない。
+focus-visible：3px focus、offset3px、暗背景は2px白の内側線も併用。outlineを消さない。
+active：primaryActive。selected：2px primary枠＋チェック＋aria-pressed/aria-selected。
+disabled：disabled色、理由を近くに書く。禁止状態を透明度だけで表さない。
+loading：通常の文言を「確認中です」「送信しています」へ変更、aria-busy。金額は残す。二重確定を無効化。キャンセルと処理の取消を区別。
+empty：「今のところ返事はありません」「まだ券の受付はありません」。架空の仕事や売上を足さない。
+success：サーバーの確定後だけ、金額・店・受付番号・日時・次の導線を表示。紙吹雪や強制アニメは不要。
+warning：「期限が近い」「事務局で確認中」等の意味と行動。黄土色だけでは伝えない。
+error：何が起きたか、保存・確定したか、次に何を押すか。入力値を残す。通信結果不明は成功でも失敗でもなく専用状態。
+動き：色transition120ms。prefers-reduced-motionで0ms。読み取り振動・音は任意で、成功判定は画面でも分かる。
+200%文字拡大、VoiceOver、日本語IME、外付けキーボードを対象にする。時限toastだけに重要結果を置かない。
+
+6．主要画面（目的／情報優先／主操作／配置／遷移／エラー）
+
+M0 ログイン・初回招待 /login、/invite
+目的：本人と所属店を確認。優先：招待先商店街→店名→認証。
+主操作：招待を受け取りログイン。初回だけ利用条件確認と表示名。
+PC/スマホ：共にmax480pxの1列。メール・パスワード・復旧リンク。招待を勝手に別店へ変更できない。
+遷移：所属が1店ならM1、複数なら店を選択。期限切れ招待は事務局へ再発行依頼。メール未到達を無限に再送しない。
+
+M1 ホーム /m
+目的：用事の入口を即座に見つける。優先：商店街・店名→券受付→未回答数→相談→入金予定。
+主操作：「券を読み取る」。本店で有効な券方式に合わせて「紙券を登録する」「公式の券サービスを開く」へ正確に変える。
+複数方式がある時だけ主操作後に最大3件の券事業を表示。無効な事業を選択肢にしない。
+PCもスマホも1列、3入口を維持。未回答0件は「完了」。休止中の券事業は受付不可の理由を示す。
+遷移：M2/M5/M7、入金M8、履歴M9。組織停止は業務を止め、問い合わせ先を表示。
+
+M2 券スキャン /m/vouchers/scan
+目的：対象券を読み取る。優先：現在の店舗と事業→スキャン枠→読み取り済み枚数と合計。
+主操作：QR読取、最大10枚、確認へ。1枚ならそのまま確認を開いてよい。複数枚追加は明示操作。
+配置：上から説明、正方形のカメラ、合計、追加/削除、確認。PCはカメラまたは番号入力。
+カメラ許可はボタン押下後。閉じる・遷移・背景化でトラック停止。権限拒否は設定説明、写真から読取、番号入力へ。
+未対応QRはURLを開かず「この地域券には対応していません」。同じ券の連続検出で枚数を増やさない。
+遷移：M3。オフラインは受付せず、通信を確認する導線。外部券は公式サービスへ、当サービスで完了表示しない。
+
+M3 受取確認 /m/vouchers/confirm/{draftId}
+目的：金額と対象店を誤らず確定。優先：合計40px→額面×枚数→店舗→規則。
+主操作：「500円を受け取る」等。固定額面を手で変更しない。釣銭・差額は券規則を表示し、本アプリで通常の会計を処理しない。
+PC/スマホ：1列の伝票型。取消し可能なのはこの確認前の読み取りリスト。
+遷移：確定後M4。期限切れ・使用済みは該当券を示し読み直しへ。サーバーの金額差異は再確認要求。
+タイムアウトは「結果を確認しています」、同じ受付番号で状態照会。新しい受付を作らせない。
+
+M4 完了・結果不明 /m/receipts/{operationId}
+目的：受付が確定したかを明確にする。優先：状態→金額→店→受付番号と日時→報告反映。
+主操作：「次の券を読み取る」「ホームへ」。成功は「地域券報告に反映済み」。入金済みとは書かない。
+配置はPC/スマホ共通の縦の受付票。
+結果不明時：再照会・履歴・事務局へ受付番号付き相談。30秒経っても勝手に失敗にせず、pendingとして残す。
+取消の申請は履歴詳細から。担当者権限で取り消せない場合は申請へ。
+
+M5 報告・返事一覧 /m/tasks
+目的：必要な依頼だけ終える。優先：差戻し→期限超過→近い期限→新しい依頼。
+主操作：1件を開く。依頼種別・締切・状態・事務局名を表示。
+PC/スマホ：罫線リスト、1行のタップ対象。長いタイトルは2行以上へ折り返す。
+遷移：M6。空は「今のところ返事はありません」。取得失敗時に0件と見せない。
+
+M6 依頼詳細・回答 /m/tasks/{id}
+目的：依頼に対する判断を最少入力で残す。優先：何を答えるか→期限→選択肢→補足。
+主操作：回覧「確認しました」、イベント「参加で回答する」、休業日送信、写真報告提出、店情報の変更申請。
+PC/スマホ：1列。質問は最大5項目、項目ラベルを省かない。必須を明示。最後に内容の確認を同じ画面でできる。
+開いただけで確認済みにしない。受付・承認待ち・差戻し・完了を区別。
+遷移：回答結果→M5。版競合409は他者の最新回答を表示し、上書き前に確認。期限後は事務局の延長・再開が必要。
+
+M7 相談 /m/requests/new、/m/requests/{id}
+目的：困りごとを店舗と事務局の間で解決。優先：種別→短文→必要なら写真→受付先。
+主操作：券・入金／設備・清掃／その他から選んで送る。写真最大3枚。音声専用実装は初期なし、端末キーボードの音声入力を使える。
+PC/スマホ：フォーム1列。詳細はメッセージ時系列と、受付／対応中／店の返事待ち／完了を上部に示す。
+遷移：受付番号→相談詳細→履歴。営業時間・対応目安は事務局設定値を表示。
+失敗時は入力を残して再送。同じリクエストの再送は1件になる。他店へ公開しない。緊急時の通常窓口扱いを避ける案内は説明末尾に簡潔に置く。
+
+M8 入金予定・明細 /m/settlements
+目的：地域券の換金状況を確かめる。優先：事業・期間→確認済み額→状態→予定日と明細。
+主操作：明細を開く・不一致を相談。店舗全売上の表示はしない。
+配置：スマホは期間ごとの帯、PCも同じ。支払前の金額へ大きく「入金済み」と出さない。
+状態：集計中／事務局確認済み／振込手続き中／振込結果確認済み／要確認。
+銀行成功結果がなく店の申告だけなら「店舗から入金の申告あり」と注記し、照合済みへ自動昇格しない。
+
+M9 履歴 /m/history
+目的：過去の券受付・回答・相談を探す。優先：日付→用事→金額/状態→担当者。
+主操作：詳細を開く。フィルタは「すべて／券／返事／相談」。取得はcursor方式50件ずつ。
+PC/スマホ：縦リスト。再取得中に既存結果を消さない。検索できない期間には理由。
+遷移：M4/M6/M7/M8。取消は元取引とセットで表示し、履歴から消さない。
+
+O1 事務局・対応待ち /o
+目的：未完了業務の処理。優先：金額の例外→差戻し/返事待ち→相談→通常依頼。
+主操作：次に処理する対象を開く。店名・期限・理由・担当者を1行で示す。KPIカード群にしない。
+PC：上部5タブと横長業務リスト。スマホ：同じ項目の縦行、トップタブは2段まで折り返す。
+取得失敗時は件数0にせず再読み込み。組織の選択は常時見える。
+
+O2 地域券事業・発行 /o/campaigns
+目的：方式と規則を確定し、発行・受付状態を管理する。
+優先：DEMO/LIVE→事業状態→方式→規則版・期間・対象店舗→発行。
+主操作：下書き作成、規則確認、公開申請、発行承認。独自券・紙券・外部実績を混同しない。
+PC：見出し＋区切りフォーム、設定とレビューを2段階。スマホは順序を維持して1列。
+公開後の金額・券方式を直接書き換えない。誤設定は停止と新しい版/事業。秘密の券番号を一般CSVに出さない。
+発行バッチのファイル取得は権限・再認証が必要。未有効券→印刷受領確認→有効化。ファイル作成失敗で有効券を放置しない。
+
+O3 精算・照合 /o/settlements、/o/settlements/{id}
+目的：正しい店へ正しい額を換金する。優先：例外件数→期間・対象→内訳→承認者→振込結果。
+主操作：集計作成、差戻し/承認、支払作業票出力、銀行結果取込。
+PC：明細＋右の承認欄の2列、スマホは上から確認項目→明細→承認。金額表は店舗ごとに縦へ展開。
+合計不一致・口座変更未承認・未処理取消・未確認紙券は出力不可。出力だけで支払済みにしない。
+v1のCSVは銀行取込保証のない支払作業票。銀行画面で振込を行った結果を所定形式へ変換し、照合して確定する。
+
+O4 依頼配信 /o/tasks
+目的：対象店へ必要な返事を依頼し、未回答だけ追える。
+優先：対象店舗→テンプレ種別→期限→本文→必須項目。
+主操作：下書き→対象と内容プレビュー→公開。公開後は版を固定し、訂正は改版。以前の回答を勝手に失効させない。
+PC：作成欄とプレビュー切替、スマホは1段階ずつ。送信済み/未回答リスト、電話代理回答を用意。
+エラー：通知未送信でも依頼レコードの作成は重複させず通知だけ再試行。未回答催促は1店舗1日1回以下。
+
+O5 相談対応 /o/requests
+目的：相談を担当者へつなぎ、次の行動を残す。
+主操作：担当割当、返信、状態変更。優先：期限・店・分類・未読・担当。
+PCは一覧→全幅詳細、スマホも遷移。内部メモは加盟店への返信欄と視覚・APIを分離。
+担当変更・返信失敗・競合を表示。完了は理由を必須にし、店が再開できる期間を30日に固定。
+
+O6 店舗・権限・監査 /o/shops、/o/settings、/o/audit
+目的：正しい人と店・口座を維持する。優先：組織→店→担当者→変更履歴。
+主操作：招待、無効化、口座変更承認、代理入力記録、監査の閲覧/出力。
+PCはタブ付き一覧→詳細、スマホは縦フォーム。口座は下4桁以外を通常マスク。
+管理者の自分自身への無条件権限付与、他組織情報の表示は禁止。最後の管理者を削除できない。
+競合時は古い版を書き換えず再確認。機微操作は直近5分以内のMFAを要求する。
+
+7．アイコン・画像の扱い
+assets/logo_horizontal.png、logo_mark.pngは透過PNG。brand_board.pngはブランドの演出資料。
+assets/pwa_icon_192.png、pwa_icon_512.png、apple_touch_icon_180.pngは紙色背景の正方形。maskable用途ではなくpurpose:anyを指定。
+assets/favicon_32.pngは小サイズ用。実装の画像altはブランド名、装飾は空文字。
+操作アイコンはexamples/ui-icons.svgの記号を使える。単独で操作の意味を伝えず日本語ラベル併記。ブランドマークと操作アイコンは別役割。
+生成画像の文字を切り抜いてボタンにしない。実際の文字はHTMLと同梱フォントで実装。
+
+8．避けること
+全機能一覧、売上KPIカード、抽象球体、無目的なグラデーション、人物の素材、極小文字、未接続機能の成功演出。
+店主にtenant、adapter、reconciliation等の実装語を見せない。DEMOの時だけ「練習用・実際の券には使えません」を常時明示。
+
+
+━━━━━━━━ データ・精算仕様全文 ━━━━━━━━
+
+Yorikado / データ・券受付・精算の実装仕様 v1.0
+
+1．共通ルール
+PostgreSQLを金額と状態の正本とする。金額は日本円の整数bigint、浮動小数点禁止。APIは安全な上限内の整数（取引上限1,000,000円、期間集計上限1,000,000,000,000円）として検証。
+UUIDを内部IDに使い、表示番号は組織内で一意な連番を別に持つ。連番の欠番を埋めるために取引を作らない。
+全日時はtimestamptz UTC、画面と締めはAsia/Tokyo。日付だけの回答はdate型。期間は開始以上・終了未満。
+名称・住所・本文は入力を保持。検索用文字列だけNFKC・空白統一等を行う。全角・異体字を本文で勝手に半角化しない。
+券番号・数値入力のみ明示した正規化（全角英数→半角、区切りハイフン除去）を許可。氏名・店名・口座名義の変換は別フィールドと確認画面を用いる。
+created_at、updated_at、version、actor_idを変更可能な業務表に持つ。versionによる楽観ロック。金銭確定後の履歴はappend-only。
+全業務行にtenant_id。関連FKはtenant_idとIDの複合FK。別組織のIDを渡すだけで参照できない。
+
+2．テーブル（最低限）
+tenants：id、name、slug、status(active/suspended)、timezone、contact、office_hours、reply_guidance、retention_policy_version。
+users：認証サービスのユーザーIDを参照。passwordを業務DBへ保存しない。
+memberships：tenant_id、user_id、role、status、version。unique(tenant_id,user_id,role)。
+shops：tenant_id、id、display_name、legal_name、address、status、external_code。連絡先と検索名を分ける。
+shop_memberships：tenant_id、shop_id、user_id、role(shop_staff/shop_owner)、status。複合unique。
+bank_accounts：tenant_id、shop_id、暗号化されたbank/branch/type/number/name、masked_suffix、version、status(pending/approved/rejected)、requested_by、approved_by、approval_evidence_id。変更時は旧版を残す。
+campaigns：tenant_id、id、name、mode(owned_qr/paper_count/external_csv)、environment(DEMO/LIVE)、status(draft/active/suspended/closed)、starts_at、ends_at、denominations、rules_text、rules_version、issuer、permission_evidence_id、live_approved_by、live_approved_at。
+campaign_shops：tenant_id、campaign_id、shop_id、eligible_from、eligible_until、status。
+issuance_batches：tenant_id、campaign_id、id、denomination、count、status(draft/generated/activated/void)、created_by、approved_by、encrypted_object_path、download_expires_at、activated_at。
+coupons：tenant_id、campaign_id、batch_id、id、token_digest、face_value、status(inactive/active/redeemed/void/retired)、valid_from、valid_until、redeemed_operation_id。token_digestはglobal unique。生のtokenは保存しない。
+receipt_drafts：tenant_id、id、shop_id、actor_id、campaign_id、coupon_ids、quote_amount、rules_version、expires_at、status(quoted/consumed/expired)。作成時だけ読み取ったtokenを検証し、以後は券IDを保持。
+operations：tenant_id、id、shop_id、actor_id、kind、idempotency_key、request_hash、status、result_ref、error_code、created_at。unique(tenant_id,actor_id,idempotency_key)。
+redemptions：tenant_id、id、operation_id、campaign_id、shop_id、amount、occurred_at、rules_version、status(confirmed/reversed)、receipt_number。unique(tenant_id,operation_id)。
+redemption_items：tenant_id、redemption_id、coupon_id、face_value。coupon_idの受付履歴は一生一回。取消で同じ券を再利用しない。
+reversals：tenant_id、id、redemption_id、reason、requested_by、approved_by、amount、settlement_adjustment_id、created_at。unique(redemption_id)。全額取消のみ。
+paper_reports：tenant_id、id、campaign_id、shop_id、received_date、denomination_counts、claimed_amount、photo_ids、original_bundle_ref、status(draft/submitted/returned/verified/rejected)、verified_amount、verified_by、version。
+external_imports：tenant_id、id、campaign_id、source_name、file_hash、status(staged/validated/committed/rejected)、mapping_version、actor_id、summary。外部決済APIではない。
+external_transactions：tenant_id、campaign_id、provider、provider_transaction_id、shop_id、amount、occurred_at、status(confirmed/reversed)、import_id、source_row。unique(tenant_id,campaign_id,provider,provider_transaction_id)。
+tasks：tenant_id、id、type(notice/event/closure/photo/shop_change)、title、body、schema_version、definition_json、due_at、status(draft/published/closed)、published_at。
+task_recipients：tenant_id、task_id、shop_id、assigned_at。公開時の対象店をスナップショットとして保持。
+responses：tenant_id、task_id、shop_id、revision、payload_json、status(submitted/returned/approved)、submitted_by、proxy_reason、submitted_at、reviewed_by。unique(task_id,shop_id,revision)。現在版参照は別列または制約付きビュー。
+acknowledgements：tenant_id、task_id、shop_id、user_id、confirmed_at、proxy_reason。明示操作時のみ作成。
+requests：tenant_id、id、shop_id、category、subject、status(received/in_progress/awaiting_shop/resolved)、assigned_to、resolution_note、resolved_at、version。
+request_messages：tenant_id、request_id、id、author_id、visibility(shop/internal)、body、attachment_ids、created_at。内部メモは店のAPIへ返さない。
+attachments：tenant_id、shop_id、parent_type、parent_id、object_path、mime、size、sha256、scan_status、created_by。publicバケット不可。
+settlement_batches：tenant_id、id、campaign_id、period_start、period_end、status(draft/review/approved/exported/partially_confirmed/confirmed/exception)、prepared_by、approved_by、frozen_at、hash、version。
+settlement_lines：tenant_id、id、batch_id、shop_id、bank_account_version、gross_amount、reversal_amount、net_amount、status、expected_date。unique(batch_id,shop_id)。
+settlement_sources：tenant_id、line_id、source_type、source_id、signed_amount。unique(tenant_id,source_type,source_id)。同じ実績を2つの精算に含めない。
+bank_result_imports：tenant_id、id、file_hash、uploaded_by、reviewed_by、status、created_at。
+bank_results：tenant_id、import_id、settlement_line_id、bank_reference、amount、result(success/failed)、executed_date。unique(tenant_id,bank_reference)。
+audit_events：tenant_id、id、actor_id、acting_for_shop_id、action、entity、before_summary、after_summary、request_id、occurred_at。token・口座全桁・パスワードを含めない。更新削除権をアプリへ与えない。
+outbox：tenant_id、id、kind、entity_id、recipient_id、dedupe_key、status、attempts、next_attempt_at。unique(dedupe_key)。
+notifications：tenant_id、recipient_id、entity_id、title、read_at。機微情報をpush本文へ含めない。
+live_readiness：tenant_id、campaign_id、issuer_authority、rules_approved、security_reviewed、pilot_completed、legal_review_ref、two_person_approval、evidence_ids。単に環境変数だけでLIVEへ移行できない。
+
+3．権限
+shop_staff：担当店舗の券受付、依頼回答、相談、当該店の履歴。口座や事業設定は不可。
+shop_owner：staffに加え、当該店の利用者招待申請・口座変更申請・取消申請。承認や銀行結果の確定は不可。
+office_operator：所属組織の店舗支援、依頼配信、相談、原本確認、精算案作成、代理入力。自作の重要処理を自己承認不可。
+office_approver：同組織の精算・取消・口座・発行・LIVE審査の承認。他者が準備した処理のみ。重要操作はMFA直近5分。
+tenant_admin：アカウントと組織設定、権限付与、停止。金額の直接編集権ではない。最後の管理者を削除不可。
+auditor：許可された履歴の読み取り、マスク済み出力のみ。
+複数役割は許可するがprepared_by != approved_byは常に実ユーザーIDで判定。事務局1名で別人確認できない場合はLIVE精算を開始しない。
+初期は連合会の横断閲覧を実装しない。複数組織へ所属して切替できるがデータを合算しない。将来は明示的共有契約と別権限で追加。
+認証JWTの権限表示だけを信用せず、DB上のactive membershipと店舗所属を各要求で確認。RLSは公開schemaとStorageにも適用。
+SECURITY DEFINER関数は必要箇所だけ、search_path固定、auth.uid()からの所属検証、PUBLIC実行権剥奪、入力のtenant信頼禁止。service-roleキーはサーバー専用で、通常のユーザーCRUDに乱用しない。
+
+4．独自QR券の発行
+固定額面券、JPY、額面1〜100,000円、1事業最大3額面、1回の受付1〜10枚、1取引上限1,000,000円。部分使用、残高、釣銭、合算ウォレットは実装しない。
+tokenはCSPRNG128bitをCrockford Base32の26文字に符号化。QR文字列はYK1:にtokenを続ける。個人情報や金額をQRへ直接入れない。券の表示番号は秘密tokenと分ける。
+DBはHMAC-SHA256(token, server-only pepper)を保存。鍵の版を持ち、移行中は旧版を検証可能にする。生tokenのログ、解析サービス送信、URLクエリ化は禁止。
+初期バッチ上限200枚。DEMO券に大きく「練習用・換金不可」。バッチ生成は二段階：まず全券inactiveと暗号化済み印刷用データを作成、担当者が取得・枚数照合後、別担当がactivate。印刷失敗・破棄時はvoid。ファイル取得だけではactivateしない。
+配布用データはAES-256-GCMで暗号化し、鍵はサーバーsecret、private storageで最長24時間、取得URL有効60秒。再取得は期限内・権限検査・MFA・監査が必要。期限後の再発行は旧バッチをvoidにして新tokenを生成。
+コピーされたQRを完全防止するとは言わない。最初の有効受付のみ成功し、紛失・流出時はバッチ停止/失効と調査を行える。
+一度使って取消した券はretiredのまま。消費者へ返す必要がある場合は発行者が別券を再発行する。v1に消費者への現金返金はない。
+
+5．原子的な受付
+カメラで読み取ったtokenはブラウザメモリで一時保持、localStorageへ保存しない。
+POST receipt-drafts：所属店と有効事業を確認し、token digestから券を取得、枚数・金額・規則版を見積もる。draftは本人・店舗に束縛し120秒で期限切れ。券を予約・使用済みにはしない。
+確認画面の確定はdraftId、expectedAmount、idempotencyKeyを送る。idempotencyKeyはブラウザが発行するUUID。端末保存できるのは機微情報のないoperationId/draftIdのみ。
+DB内の1トランザクションで次を行う。
+ a 所属と操作権限を再検査。既存idempotencyKeyがあればrequest_hash一致時は元結果を返す。不一致は409。
+ b draftをロックし、本人・店・未使用・期限を確認。既に確定した同じoperationは期限切れでも元結果を返す。
+ c campaignと対象券を固定順でロック。事業active、LIVE条件、サーバー時刻、店適格性、全券active、規則版、金額を再検査。
+ d 1枚でも不適格なら全体失敗。部分成功は禁止。
+ e redemptions/items挿入、couponsをredeemedへ、draft consumed、operation confirmed、監査、報告集計の参照元を同時確定。
+ f outboxを同じトランザクションで挿入。通知処理自体は後続ジョブ。
+DB確定前に成功を返さない。DB関数を分割して片方だけ成功する構造は禁止。
+同一券の別店舗からの同時受付は成功1件だけ。ユニーク制約とrow lockの両方で守る。UIのボタン無効化だけに頼らない。
+明確な業務エラーは失敗として返し、使用済み等の理由を表示。ネットワーク失敗は結果不明であり新しいkeyで再発行しない。
+GET operations/{id}を2、5、10、20秒で照会し、以後は利用者の再照会。リロード後も自分のdraft/operationから復帰。
+未確定を確認した場合だけ同じdraft・keyで再試行。draft期限切れなら、当該operation未確定を確認した後に読み直す。オフライン受付やバックグラウンドの自動後払い送信は禁止。
+レスポンスの利用済み情報は、他店の店名等を漏らさず「使用済み、事務局へ確認」とする。自店取引だけ詳細リンクを返す。
+
+6．紙券
+一意な券のない紙券は、受取日・額面別枚数・写真・原本束番号を記録。合計は整数で再計算。
+paper_reportのsubmittedは申告受付であり、券の使用済み登録でも換金確定でもない。紙原本を規則通り回収・確認してoperatorがverifiedにする。
+claimed_amountとverified_amountが違えば理由を保存、店舗が差戻し内容を確認する。確認済みの原本束番号は同一事業で一意。
+同じ写真hashは重複候補として注意表示するが、写真だけで同一紙券の完全判定はできない。
+原本のあるなし・保管場所・返却状態を記録。会計証憑の法律上の保存要件を一律に満たすと表示しない。
+
+7．外部CSV
+Yorikadoが受け付ける標準列：provider, provider_transaction_id, shop_external_code, amount_jpy, occurred_at, status, original_transaction_id。
+statusはconfirmed/reversed。正のamount、ISO8601のタイムゾーン必須。1ファイル10MB/10,000行、UTF-8（BOMあり可）のみ。Excelの桁落ち・日付変換を検出。
+取り込みはupload→列・文字コード検査→マッピング→エラー行一覧→件数と金額プレビュー→確定の順。エラーがあれば全体未確定。
+既存の同一キー・同一内容はskip。同一キー・異なる内容はconflictとして止める。ファイルhashが同じなら既存結果を示し、二重登録しない。
+unknown shopは手動で正しい店舗へ対応付け。異なる組織へ割当不可。
+reversedは元取引が必要。取消累計が元額を超えない。v1は全額取消のみ、部分取消行はunsupportedとして受付不可。
+取り込んだ記録は外部実績であり、本アプリが外部券を消化した証明にはしない。提供元の正式データと記録責任者を保存。
+
+8．精算
+独自QR confirmed、確認済みpaper、取り込み済みexternalのみを原資にする。同一事業の方式は混在させず、店×事業×期間で集計。
+額面合計－未精算の全額取消＝net。v1の独自手数料は0。税を地域券額面に再計算しない。商品の税務売上は本アプリの責務外。
+締めは事業設定のmonthly（末日JST、翌月1日00:00exclusive）または明示期間。初期標準monthly。精算予定日は事務局が入力、祝日の自動銀行営業日判定は初期なし。
+draft作成時に対象sourceを固定、review時に未確定例外・重複・口座承認版・対象期間を検査。別担当がapprovedにする。
+承認時にline合計とsources合計一致をDBで検査し、対象口座版と内容hashを固定。出力後の口座変更を既存精算へ黙って反映しない。
+支払作業票CSV出力はexported。「銀行取込用ファイル」ではない旨を画面・READMEへ明記。銀行固有の全銀・API・自動送金は別実装。
+銀行側の振込結果を標準列line_id, bank_reference, amount_jpy, result, executed_dateへ取り込み。銀行の元ファイル・処理日・担当者も保存。金額・店・明細ID一致を確認し別担当が確定。
+successで全額一致した行のみ振込結果確認済み。failed、不足、過払い、未到着、不明行はexception。1ファイル成功でも全行成功とはしない。
+再出力は同じバッチ番号/同じ内容hashと「再出力」を明記し、銀行で重ねて実行しないよう表示。入金成功済み行は新しい支払作業票へ含めない。
+取消：精算確定前なら新しい精算版へ再計算し再承認。承認済み/出力済みを直接変更しない。必要なら当該支払作業を保留し、銀行結果を確認してから調整。
+支払後取消は負の調整記録を次期に作り要確認へ。店口座から自動引落しも自動相殺も行わない。回収・相殺の運営判断と証跡を別承認してから調整を解消する。
+地域券の受付、事務局の確認、支払作業票、銀行の成功結果、店の入金申告は別状態として保持。
+
+9．回答・相談の履歴
+依頼の公開版と対象店を固定。回答は1店1現在版、改訂履歴を保持。回覧の確認は押下時だけ。
+写真報告と店情報変更は事務局承認が必要。イベント/休業/回覧は送信後accepted相当（responsesではapproved）へ。ただし処理終了と勘違いしない「回答済み」の表現にする。
+催促：公開済み未回答だけ。09:00〜18:00JST、1依頼1店舗24時間1回、同店合計1日1通知へまとめる。送信直前も回答済みか再確認。
+代理入力にはoperator、元店舗、電話/紙等の理由、日時を必須とする。原本人になりすました監査記録を作らない。
+相談の内部メモはoffice専用。写真URLは本人/担当店/所属事務局のみ60秒署名URLで閲覧。解決後30日以内は店舗から再開、以後は新相談として元IDを関連付ける。
+
+10．添付・保存・運用
+JPEG/PNG/WebP、原本1枚10MB、最大3枚、サーバーでMIMEとデコードを検査、長辺2400pxへ正規化、EXIF位置情報削除。HEICは初期サーバー変換を実装しないので、端末がJPEGを供給しない場合は対応形式への変換案内を出す。iPhone実機で撮影アップロードを必ず検証する。
+アップロード先は一時隔離、検査・再エンコードが通るまで他ユーザーへURLを出さない。HTML/SVG/実行形式を受け付けない。
+業務情報をlocalStorageやService Workerへ保存しない。MFA秘密、券token、銀行全桁、相談本文をanalyticsへ送らない。
+保存期間の初期製品設定：取引・精算・監査7年、回覧・回答・相談2年、写真1年、失敗ジョブログ90日、セキュリティログ180日。これは法律上の保存義務を断定した値ではない。契約前に責任者が保存方針を確定し、legal hold対象は削除しない。
+期限削除は対象一覧→承認→実行→監査。金銭行を通常CRUDで削除不可。退会で履歴を消さずアクセスを失効、個人連絡先は保存方針に従って匿名化。
+DBバックアップ毎日、PITRを提供する有料構成をLIVEの前提とする。添付も独立して日次バックアップ。初期の運用目標RPO24時間/RTO8時間。復元実測なしに達成済みとしない。
+組織ごとにJSON/CSV/添付のエクスポートができる。券の生tokenや暗号鍵はエクスポート対象外。CSVの先頭=,+,-,@および制御文字による式注入を防止し、原文は別の安全なJSONに保持。
+DEMOとLIVEは別Supabaseプロジェクト・別Storage・別secret・別ドメイン。画面バッジだけの分離にしない。DEMOリセットはDEMO環境ガードと再確認を実装し、LIVEで操作を拒否。
