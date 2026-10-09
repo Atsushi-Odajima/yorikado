@@ -28,7 +28,7 @@ export function WelcomeForm({ initialName }: { initialName: string }) {
         <input id="name" className={ui.input} value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
       </div>
       <div className={ui.field}>
-        <label className={ui.choice} aria-checked={agree}>
+        <label className={ui.choice} data-checked={agree}>
           <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} style={{ width: 24, height: 24 }} />
           <span>
             <Link href="/terms" target="_blank">利用条件</Link>を確認し、同意します

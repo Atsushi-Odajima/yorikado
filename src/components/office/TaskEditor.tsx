@@ -142,7 +142,7 @@ export function TaskEditor({ tenantId, shops, draft }: { tenantId: string; shops
         <legend className={ui.label}>対象店舗（{targets.length}店）</legend>
         <div className={ui.row}>
           {shops.map((s) => (
-            <label key={s.id} className={ui.choice} aria-checked={targets.includes(s.id)}>
+            <label key={s.id} className={ui.choice} data-checked={targets.includes(s.id)}>
               <input type="checkbox" checked={targets.includes(s.id)} onChange={(e) => setTargets(e.target.checked ? [...targets, s.id] : targets.filter((x) => x !== s.id))} />
               {s.name}
             </label>

@@ -146,7 +146,8 @@
   font-size: 18px;
 }
 .choice[aria-pressed='true'],
-.choice[aria-checked='true'] {
+.choice[aria-checked='true'],
+.choice[data-checked='true'] {
   border: 2px solid var(--primary);
   background: var(--selected-surface);
   font-weight: 700;

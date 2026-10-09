@@ -2,7 +2,7 @@
 
 import type { IScannerControls } from '@zxing/browser';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { itemLabel } from '@/components/forms/ErrorNotice';
 import { Button, Notice, ui, yen } from '@/components/ui';
 import { normalizeTokenInput } from '@/domain/vouchers/tokenFormat';
@@ -19,6 +19,15 @@ interface Quote {
 type CamState = 'off' | 'starting' | 'on' | 'paused' | 'denied' | 'busy' | 'unsupported';
 
 const MAX = 10;
+
+function subscribeOnline(cb: () => void) {
+  window.addEventListener('online', cb);
+  window.addEventListener('offline', cb);
+  return () => {
+    window.removeEventListener('online', cb);
+    window.removeEventListener('offline', cb);
+  };
+}
 
 /**
  * QR / photo / manual-number reader. Video frames are decoded in the browser
@@ -38,7 +47,8 @@ export function Scanner({ shopId, shopName, campaignId, campaignName }: { shopId
   const [message, setMessage] = useState<{ tone: 'warning' | 'error' | 'success'; text: string } | null>(null);
   const [manual, setManual] = useState('');
   const [busy, setBusy] = useState(false);
-  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  // Server snapshot is always "online" so SSR and hydration agree (Node also defines navigator).
+  const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
   // The camera callback is created once; read current values through refs.
   const tokensRef = useRef(tokens);
   const multiRef = useRef(multi);
@@ -66,16 +76,11 @@ export function Scanner({ shopId, shopName, campaignId, campaignName }: { shopId
         setCam('paused');
       }
     };
-    const onOnline = () => setOnline(navigator.onLine);
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('pagehide', stopCamera);
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOnline);
     return () => {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('pagehide', stopCamera);
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOnline);
       stopCamera();
     };
   }, [stopCamera]);
@@ -233,7 +238,7 @@ export function Scanner({ shopId, shopName, campaignId, campaignName }: { shopId
           カメラを止める
         </Button>
       )}
-      <label className={ui.choice} aria-checked={multi}>
+      <label className={ui.choice} data-checked={multi}>
         <input type="checkbox" checked={multi} onChange={(e) => setMulti(e.target.checked)} style={{ width: 24, height: 24 }} />
         <span>複数枚をまとめて読み取る（最大10枚）</span>
       </label>

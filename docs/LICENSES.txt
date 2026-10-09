@@ -1,0 +1,16 @@
+Yorikado / ライセンスと素材の権利表記
+===================================
+フォント（SIL Open Font License 1.1）
+  BIZ UDPGothic   public/fonts/BIZUDPGothic-*.woff2   原文: public/fonts/BIZUDPGothic-OFL.txt（design-kit/licenses/）
+  Newsreader      public/fonts/Newsreader.woff2       原文: public/fonts/Newsreader-OFL.txt
+  Noto Serif JP   public/fonts/NotoSerifJP.woff2      原文: public/fonts/NotoSerifJP-OFL.txt
+  WOFF2 はTTFからの形式変換のみ（グリフ・名称の改変なし）。OFL の条件（単体販売禁止・ライセンス同梱）を守って配布してください。
+
+ブランド素材（design-kit/assets → public/brand）
+  logo_horizontal.png, logo_mark.png, pwa_icon_*.png, apple_touch_icon_180.png, favicon_32.png, brand_board.png
+  生成AIによる新規制作物（design-kit/06_asset_notes_and_review.txt）。商標登録・排他的権利の成立は保証されていません（商標未確認）。
+  操作アイコン（src/components/ui.tsx の Icon）は design-kit/examples/ui-icons.svg の自作図形を移植。
+
+ソフトウェア依存
+  docs/DEPENDENCIES.txt のパッケージはそれぞれのライセンス（主に MIT / Apache-2.0 / ISC / BSD）に従います。
+  一覧の生成: `npx license-checker --production --summary`（未同梱。配布前に実行して添付してください）。

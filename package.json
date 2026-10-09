@@ -22,8 +22,10 @@
     "jobs:dev": "node --env-file-if-exists=.env.local --import tsx scripts/run-jobs.ts --loop",
     "jobs:once": "node --env-file-if-exists=.env.local --import tsx scripts/run-jobs.ts",
     "verify-env": "node --env-file-if-exists=.env.local --import tsx scripts/verify-env.ts",
-    "export-tenant": "node --env-file-if-exists=.env.local --import tsx scripts/export-tenant.ts",
-    "perf": "node --env-file-if-exists=.env.local --import tsx scripts/perf.ts"
+    "export-tenant": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/export-tenant.ts",
+    "perf": "node --env-file-if-exists=.env.local --import tsx scripts/perf.ts",
+    "backup:check": "node --env-file-if-exists=.env.local --import tsx scripts/backup-restore-check.ts",
+    "release:zip": "node scripts/package-release.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "5.9.1",
@@ -61,5 +63,10 @@
     "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "5.0.3"
+  },
+  "overrides": {
+    "@axe-core/playwright": {
+      "playwright-core": "1.56.1"
+    }
   }
 }

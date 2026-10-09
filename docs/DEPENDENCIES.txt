@@ -1,0 +1,45 @@
+Yorikado / 依存関係と固定バージョン（2026-10-09 時点）
+====================================================
+すべての版は package.json に完全一致（-E）で固定し、package-lock.json に記録しています。
+本番起動時に「最新タグ」を取得する構成はありません。更新は lockfile の差分レビューを経て行ってください。
+
+ランタイム
+  Node.js            22.x LTS（開発・検証: v22.22.0。package.json engines ">=22.12.0 <23"）
+                     理由: Next.js 16 / Supabase CLI がサポートする 22 系の最新セキュリティ版。EOL(2027-04予定)前に 24 LTS へ移行を検討。
+  PostgreSQL         17（Supabase ローカル: supabase/postgres:17.6.1.064 / CLI 既定。config.toml major_version=17）
+
+主要依存（dependencies）
+  next 16.4.0                 App Router / Route Handlers / proxy.ts（Next 16 で middleware→proxy に改称）
+  react / react-dom 19.3.0
+  @supabase/supabase-js 2.117.3, @supabase/ssr 0.12.7   BFF（サーバー側でAuth、HttpOnly Cookie）
+  zod 4.6.5                    入力検証（API で必ず再検証）
+  react-hook-form 7.89.0 + @hookform/resolvers 5.9.1     口座変更フォーム（共有Zodスキーマ）で使用。他のフォームは制御コンポーネント＋サーバー側Zod（docs/HANDOFF.txt 参照）
+  @zxing/browser 0.2.1, @zxing/library 0.23.0            QR 読取（iOS Safari の getUserMedia + canvas decode。BarcodeDetector 非依存）
+  qrcode 1.5.4                 印刷用QR(SVG)生成。tests/unit/qr-print.test.ts で ZXing による往復読取を検証
+  papaparse 5.7.0              CSV（引用符・改行を正しく扱う）
+  sharp 0.35.5                 画像のデコード検査・再エンコード（EXIF/GPS除去・長辺2400px）
+  nodemailer 10.0.16           SMTP アダプタ（開発: Supabase ローカル受信箱 Mailpit）
+  fflate 0.8.3                 組織データ出力の ZIP
+  pg 8.23.1                    スクリプト/テスト専用の直接接続（アプリ本体は supabase-js 経由）
+  @radix-ui/react-dialog 1.2.0 アクセシブルなダイアログ（MFA再確認のみ）
+  server-only 0.0.1            サーバー専用モジュールの誤バンドル防止
+
+開発依存（devDependencies）
+  typescript 5.9.3（7.x は Next 16 との組合せ未検証のため 5 系最新を採用）
+  supabase (CLI) 2.120.0       npm run db:start / db:reset:demo はこの固定版を使用
+  vitest 5.0.3, @playwright/test 1.56.1, @axe-core/playwright 4.13.0
+     Playwright は開発コンテナ同梱の Chromium(revision 1194) に合わせ 1.56.1 に固定。
+     新しい PC では `npx playwright install chromium webkit` で同版ブラウザを取得してください。
+  eslint 10.12.0, eslint-config-next 16.4.0, tsx 4.23.15
+  @types/* は package.json 参照
+
+既知の監査結果（npm audit, 2026-10-09）
+  eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch の high 5件。
+  いずれも開発時の lint のみで使用され、本番バンドル・サーバーには含まれません。eslint-config-next の更新で解消を確認してください。
+
+Supabase ローカル（Docker イメージ。CLI 2.120.0 が選択）
+  supabase/postgres 17.6.1.064, supabase/gotrue v2.197.0, supabase/storage-api v1.79.36, kong, mailpit(inbucket)
+  ※ この開発コンテナでは public.ecr.aws に到達できないため SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io で取得しました（Windows では不要）。
+
+フォント（セルフホスト、design-kit/assets/fonts から WOFF2 へ無損失変換。fontTools 4.60.1 + brotli）
+  BIZ UDPGothic Regular/Bold, Newsreader（可変 400–600）, Noto Serif JP（可変・広告見出し用のみ）

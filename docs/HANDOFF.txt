@@ -1,0 +1,79 @@
+Yorikado / 引継ぎ（HANDOFF）
+==========================
+最終更新: 2026-10-09（このセッションの作業終了時点）
+ブランチ: claude/yorikado-v1（main からの作業ブランチ。PR は未作成）
+
+0. 次のセッションが最初にやること
+  1) docs/SETUP_WINDOWS.txt の手順でローカル起動（npm ci → .env.local → npm run db:start → npm run db:reset:demo → npm run dev / jobs:dev）
+  2) npm run lint / typecheck / test / test:integration / test:e2e が通ることを確認（.env.test は .env.local のコピー）
+  3) 本ファイル「4. 未完了」と docs/TEST_REPORT.txt「未実施」から着手
+
+1. 工程ごとの状態
+  P1 基盤 …… 完了
+    - Next.js 16.4 App Router（src/）、BFF の /api/v1 は catch-all Route Handler（src/app/api/v1/[...path]/route.ts → src/server/api/routes/*）
+    - Supabase migrations 5本（supabase/migrations）。RLS 全テーブル、api_*/svc_* 関数、監査、outbox、レート制限、Storage バケット
+    - 認証: 招待（72h・単回）、ログイン、パスワード再設定（token_hash メール）、TOTP 登録/検証、セッション絶対期限、全端末ログアウト
+    - デザイントークン（src/styles/tokens.css）、セルフホストフォント（WOFF2）、DEMO seed（supabase/seed.sql + scripts/seed-demo.ts）
+  P2 縦の一巡 …… 完了
+    - 独自QR: 事業作成→申請→承認、二段階発行（無効のまま→印刷・枚数確認→別担当が有効化）、A4印刷ページ
+    - 受付: 読取（カメラ/写真/番号）→ 見積(draft 120秒) → 確定（1トランザクション・冪等）→ 受付票 → 結果不明時の照会
+    - 精算: 生成→例外検査→承認（別人・MFA・hash固定）→支払作業票CSV→銀行結果取込→別担当が確定→店舗の明細
+  P3 回覧・回答・相談・紙券・外部CSV …… 完了
+    - 依頼5種（テンプレート・最大5問・改版・期限延長・催促・代理入力・写真/店情報は事務局確認）
+    - 相談（写真3枚・内部メモ・担当割当・状態・30日以内の再開）、添付（隔離→再エンコード→60秒署名URL）
+    - 紙券（申告→原本確認/差戻し/不受理、束番号一意、差額理由）、外部CSV（検査→プレビュー→対応付け→確定、重複/差分/部分取消）
+  P4 異常系・権限テスト・運用 …… 大部分完了（未完了は 4. を参照）
+    - 単体 31 / DB統合 46 / E2E（Chromium）は docs/TEST_REPORT.txt
+    - 運用文書、バックアップ復元訓練スクリプト、性能測定スクリプト、組織データ出力（画面・CLI）
+
+2. 重要な設計判断（変えるときは仕様の優先順位を確認）
+  - 金額・状態の正本は PostgreSQL。業務の書込は SECURITY DEFINER 関数のみ（API ロールにテーブル書込権限なし）。
+  - 券 token は DB に渡さない（サーバーで HMAC → digest 照合）。印刷データは AES-256-GCM で private storage、取得は POST 本文で返す（URLに出さない）。
+  - 「取得URL有効60秒」: 印刷データは URL を発行せず、権限・MFA・監査付き POST の応答本文で返すため URL 自体が存在しない。
+    添付・組織データ出力は 60 秒の署名 URL。
+  - GET /operations/{id} は ID か idempotency key で照会。未記録は "pending"（同じ key で再送しても二重にならない）。
+  - 状態の追加: 精算行に held/resolved/failed、取消に requested/approved/rejected を持たせた（仕様の状態列挙はバッチ側を厳守）。
+  - 事業の「公開申請」は status=draft のまま submitted_at を立てる（仕様の draft/active/suspended/closed を維持）。
+  - 未承認の精算案の「破棄」は行ごと削除（金銭確定前で、sources を解放するため）。監査に破棄前の内容を記録。
+  - 取消が却下された受付は、同じ受付で再申請できない（reversals.redemption_id 一意）。必要なら事務局が相談で対応。
+  - フォーム: 口座変更は React Hook Form + 共有 Zod スキーマ。他のフォームは制御コンポーネント＋サーバー側 Zod（全 API で再検証）。
+    RHF へ揃える場合は src/components/merchant/BankChangeForm.tsx を手本に。
+  - Next 16 では middleware が proxy.ts に改称（src/proxy.ts）。CSP nonce はここで付与。
+
+3. 主要ファイル
+  supabase/migrations/20261009000100_core.sql          テナント・人・セッション・監査・outbox・共通ヘルパ（app.require_office 等）
+  supabase/migrations/20261009000200_vouchers.sql      事業・発行・券・受付(確定)・取消・紙券・外部CSV
+  supabase/migrations/20261009000300_tasks_requests.sql 依頼・回答・相談・添付
+  supabase/migrations/20261009000400_settlements.sql   口座・精算・銀行結果
+  supabase/migrations/20261009000500_admin_jobs_rls.sql 店舗・招待・権限・対応待ち・履歴・監査・出力・ジョブ・RLS・Storage
+  src/server/api/router.ts（CSRF・エラー形式・冪等キー）, src/server/db/supabase.ts（user/admin クライアント）
+  src/components/merchant/Scanner.tsx, ConfirmPanel.tsx（受付UIの要）
+  src/server/jobs/runner.ts（通知・招待・催促・出力・印刷データ削除）
+  tests/integration/*（金銭・権限・並行・冪等）、tests/e2e/*
+
+4. 未完了・ブロッカー（隠さずに記載）
+  実機・外部が必要（この環境では不可）
+  - iPhone 実機（HTTPS）でのカメラ許可/拒否/復帰・写真読取・番号入力・ホーム画面追加・VoiceOver・200%文字・日本語IME（AC02/AC03）… 未実施
+    → 本番開始のゲートは閉じたまま。docs/TEST_REPORT.txt「実機確認項目」を実施して記録すること
+  - WebKit（Playwright）… この開発コンテナに WebKit が無く未実行。`npx playwright install webkit` 後 PW_WEBKIT=1 npm run test:e2e
+  - 印刷物を実際に印刷してスマホで読み取る検証 … 未実施（デジタルの往復読取は単体テストで確認済み）
+  - HTTPS の DEMO 公開（Vercel 等）… 利用者のアカウントが必要なため未実施。手順は docs/DEPLOYMENT.txt
+  - 実在の SMTP・発行者・銀行・外部券提供元との接続 … 契約がないため未接続（adapter は NONE）
+  実装の残り
+  - 保存期間に基づく期限削除（対象一覧→承認→実行→監査）… 未実装。housekeeping は outbox と期限切れの整理のみ
+  - 個人連絡先の匿名化手順（退会時）… 未実装（運用文書に方針のみ）
+  - 添付のウイルス検査エンジン … 未接続（デコード・再エンコードのみ）
+  - 監査ログ画面の操作名は英語のアクションコード表示（日本語ラベル化は未）
+  - 事務局ユーザーの TOTP 紛失時の自己復旧（復旧コード）… Supabase 標準のみ。運用手順で対応
+  - 依頼テンプレートの質問IDは英数（店舗には表示されない）。選択肢の並べ替えUIなし
+  - 事業の対象店舗の追加・削除は下書き時のみ（公開後は新しい事業で対応）
+  - Lighthouse/実ネットワークでの性能測定 … ローカル単機の測定のみ（docs/TEST_REPORT.txt）
+  - 負荷時のレート制限値の現場調整 … 暫定値のまま
+
+5. 次の手順（推奨順）
+  1) DEMO を HTTPS で公開し、iPhone 実機テストを実施して TEST_REPORT を更新
+  2) WebKit E2E を実行
+  3) 期限削除の承認フローを実装（migration 追加 + 事務局画面）
+  4) 第三者のセキュリティ診断、LIVE 用 Supabase（有料・PITR）での復元訓練
+  5) docs/legal/ の原案を契約責任者・専門家が確定
+  6) 現場実証（パイロット）でレート制限・文言・導線を調整

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { InstallHint } from '@/components/merchant/InstallHint';
 import { MerchantShell } from '@/components/merchant/Shell';
 import m from '@/components/merchant/merchant.module.css';
 import { Icon, Notice, StateBadge } from '@/components/ui';
@@ -107,6 +108,7 @@ export default async function MerchantHome() {
       <Link href="/m/settlements" className={m.subLink}>
         地域券の入金予定を見る
       </Link>
+      <InstallHint />
     </MerchantShell>
   );
 }

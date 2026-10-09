@@ -1,0 +1,50 @@
+Yorikado / 公開（DEMO の HTTPS URL）と LIVE 移行の手順
+======================================================
+この文書の手順は、利用者自身のアカウントで行うものです。開発時点で公開・実データ投入・第三者招待・実券有効化・銀行振込は一切行っていません。
+
+A. 構成
+  - アプリ: Next.js 互換のサーバーホスト（例: Vercel）。Node.js 22 ランタイム。
+  - DB/Auth/Storage: Supabase（DEMO と LIVE は必ず別プロジェクト・別Storage・別シークレット・別ドメイン）。
+  - 定期ジョブ: ホストの Cron から POST/GET /api/v1/internal/jobs/run（Authorization: Bearer $JOB_RUNNER_SECRET）を毎分〜5分ごと。
+  - メール: 運営が正規契約する SMTP（MAIL_PROVIDER=smtp）。DEMO はテスト用受信箱でも可。
+  - 料金: Vercel・Supabase とも商用利用・バックアップ(PITR)・SLA は有料プランが前提です。無料枠を商用 SLA とみなさないでください。
+    導入時点の料金・規約は各社の公式ページで確認してください（本書は価格を保証しません）。
+
+B. DEMO を HTTPS で公開して iPhone で触る
+  1. Supabase で DEMO 専用プロジェクトを作成し、docs/SETUP_WINDOWS.txt「7.」の a〜f を実施（migration・seed・Auth設定）。
+     - Auth → Sign-ups: 無効（招待制）。Email confirm: 不要（招待リンクで所有確認）。MFA TOTP: 有効。
+     - Auth → URL Configuration: Site URL = https://<DEMOのドメイン>、Redirect URLs = https://<DEMOのドメイン>/auth/confirm のみ。
+       プレビュー環境のワイルドカード URL を許可しないでください。
+  2. Vercel でリポジトリをインポート（Framework: Next.js）。Environment Variables（Production のみ）に .env.example の全項目を設定:
+       APP_ENV=demo, APP_BASE_URL=https://<DEMOのドメイン>, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY,
+       COUPON_HMAC_KEY, EXPORT_ENCRYPTION_KEY, JOB_RUNNER_SECRET, MAIL_PROVIDER, MAIL_FROM, SMTP_*
+     DATABASE_URL はアプリ本体では不要（スクリプト・テスト専用）。NEXT_PUBLIC_ で始まる変数は作らないこと。
+  3. Cron: Vercel の Cron Jobs に /api/v1/internal/jobs/run を登録し、CRON_SECRET に JOB_RUNNER_SECRET と同じ値を設定
+     （Vercel は Authorization: Bearer <CRON_SECRET> を付けて GET します。本アプリは GET/POST の両方を受け付けます）。
+     プランにより最短間隔が異なります。間隔が長い場合、通知・招待メールが遅れることを利用者に伝えてください。
+  4. デプロイ後、ローカルから設定検証:
+       PS> $env:APP_BASE_URL='https://<DEMO>'; npm run verify-env   （.env.local を DEMO 公開用の値にした上で）
+     DEMO/LIVE の不一致・鍵不足があれば起動前に止まります。秘密値は表示しません。
+  5. ホストの保護機能（Vercel Deployment Protection 等）とアプリのログインが干渉する場合は、構成を記録した上で、
+     保護を無断で弱めず、閲覧者を限定する設定（パスワード保護・SSO・IP制限）を利用者が判断してください。
+  6. iPhone Safari で https://<DEMO>/login を開き、DEMO アカウントでログイン。docs/TEST_REPORT.txt の「実機確認項目」を実施。
+     ホーム画面への追加: Safari の共有ボタン → 「ホーム画面に追加」。（beforeinstallprompt は iOS にありません）
+  7. 共有したい相手は、事務局の画面から招待します（招待は72時間・1回限り）。
+
+C. LIVE 移行（実券）チェック — すべて満たすまで LIVE で受付を開始しない
+  □ 別の Supabase プロジェクト（有料・PITR 有効・日次バックアップ）、別ドメイン、別シークレット
+  □ DB の環境表示を LIVE に設定（運用責任者が SQL で一度だけ）:
+      insert into public.deployment_environment (id, environment) values (true, 'LIVE');
+    （DEMO の seed.sql は LIVE 表示のDBで自動的に失敗します）
+  □ APP_ENV=live、MAIL_PROVIDER=smtp（正規契約）、APP_BASE_URL は https
+  □ npm run verify-env が OK（LIVE に @example.com の DEMO ユーザーがいないことも検査）
+  □ 発行者の発行権限・契約の確認（事業ごとに live_readiness に記録）
+  □ 券の規則（額面・期間・対象店・釣銭なし）を発行者が承認
+  □ 二人承認の体制（承認者が作成者と別人。事務局1名で別人確認できない場合は LIVE 精算を開始しない）
+  □ セキュリティ確認（docs/SECURITY.txt の残課題の解消または受容判断）
+  □ 現場実証（パイロット）完了、iPhone 実機テスト完了（docs/TEST_REPORT.txt）
+  □ バックアップからの復元を実測（RPO/RTO 目標 24h/8h は実測と区別して記録）
+  □ 担当窓口・インシデント対応手順（docs/OPERATIONS.txt）
+  □ 利用規約・プライバシー・役割分担の原案（docs/legal/）を契約責任者が確定
+  □ アプリ上の LIVE 審査（事業詳細 → 実券（LIVE）開始条件 → 別の承認者が「LIVE審査を承認」→ 事業の承認）
+  これらは画面のチェックボックスだけで完了扱いにしません。証跡（evidence）を残してください。

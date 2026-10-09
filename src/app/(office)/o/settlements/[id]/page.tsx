@@ -6,6 +6,7 @@ import { EXCEPTION_REASON, LINE_STATUS, SETTLEMENT_STATUS } from '@/components/o
 import { OfficeShell } from '@/components/office/Shell';
 import o from '@/components/office/office.module.css';
 import { d, dt, Notice, StateBadge, ui, yen } from '@/components/ui';
+import { bankTransferAdapter } from '@/server/adapters';
 import { load, requireOffice } from '@/server/auth/page';
 
 export const metadata: Metadata = { title: '精算の詳細' };
@@ -142,7 +143,7 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
             {exportable && (isOp || isApprover) && <ExportWorklist batchId={id} batchNumber={b.batchNumber} exportCount={b.exportCount} />}
             {['exported', 'partially_confirmed', 'exception'].includes(b.status) && (isOp || isApprover) && <BankResultsImport batchId={id} />}
           </div>
-          <p className={ui.help} style={{ marginTop: 16 }}>支払作業票は銀行へそのまま取り込めるファイルではありません。出力しただけでは振込済みになりません。</p>
+          <p className={ui.help} style={{ marginTop: 16 }}>支払作業票は銀行へそのまま取り込めるファイルではありません。出力しただけでは振込済みになりません。{bankTransferAdapter.note}。</p>
         </aside>
       </div>
     </OfficeShell>

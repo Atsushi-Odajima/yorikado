@@ -104,7 +104,7 @@ export function CampaignForm({ tenantId, environment, shops }: { tenantId: strin
         <legend className={ui.label}>対象店舗</legend>
         <div className={ui.choices}>
           {shops.map((s) => (
-            <label key={s.id} className={ui.choice} aria-checked={shopIds.includes(s.id)}>
+            <label key={s.id} className={ui.choice} data-checked={shopIds.includes(s.id)}>
               <input type="checkbox" checked={shopIds.includes(s.id)} onChange={(e) => setShopIds(e.target.checked ? [...shopIds, s.id] : shopIds.filter((x) => x !== s.id))} style={{ width: 24, height: 24 }} />
               {s.name}
             </label>

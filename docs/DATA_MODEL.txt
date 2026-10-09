@@ -1,0 +1,55 @@
+Yorikado / データモデルと状態
+==============================
+正本: supabase/migrations/*.sql。金額は日本円の整数（bigint）、日時は timestamptz(UTC)、表示と締めは Asia/Tokyo。
+全業務表に tenant_id があり、関連は (tenant_id, id) の複合外部キーで結ぶため、別組織のIDを渡しても参照できません。
+
+1. 主なテーブル（public スキーマ。全テーブル RLS 有効）
+  組織・人
+    tenants, profiles, memberships(事務局ロール), shops, shop_memberships(店員/店主), invitations(72h・単回・tokenはSHA-256のみ)
+    app_sessions（アプリ側のセッション絶対期限: 店舗7日/事務局8時間、失効）
+  券
+    campaigns(mode: owned_qr/paper_count/external_csv, environment: DEMO/LIVE, status: draft/active/suspended/closed)
+    campaign_shops, live_readiness, issuance_batches(draft/generated/activated/void), coupons(inactive/active/redeemed/void/retired)
+    receipt_drafts(120秒・本人と店に束縛), operations(idempotency), redemptions(confirmed/reversed), redemption_items(券は一生一回: unique coupon_id)
+    reversals(全額のみ・1受付1件: requested/approved/rejected)
+    paper_reports(draft/submitted/returned/verified/rejected), external_imports(staged/validated/committed/rejected), external_import_rows, external_transactions
+  依頼・相談
+    tasks(draft/published/closed, supersedes/superseded_by), task_draft_targets, task_recipients(公開時スナップショット)
+    responses(店ごと1つの現在版 is_current + 改訂履歴), acknowledgements(明示操作のみ)
+    requests(received/in_progress/awaiting_shop/resolved), request_messages(visibility: shop/internal), attachments(pending/clean/rejected)
+  精算
+    bank_accounts(暗号化・版管理・pending/approved/rejected), settlement_batches, settlement_lines, settlement_sources
+    bank_result_imports, bank_result_rows, bank_results
+  運用
+    audit_events(追記のみ・トリガで更新削除禁止), outbox(dedupe_key一意・再試行), notifications, rate_limits, counters, idempotency_keys, tenant_exports, mail_sink(開発用)
+    deployment_environment(DEMO/LIVE の表示。1行のみ)
+
+2. 金額・状態の規則（05 仕様の実装場所）
+  受付（api_receipt_draft_create → api_redemption_confirm）
+    - token は DB に渡らない。サーバーが HMAC-SHA256(鍵版ごと) を計算し digest で照合。
+    - 確定は1トランザクション: idempotency(行ロック) → draft ロック・本人/店/期限 → 事業 for share → 券を id 順に for update →
+      全条件再検査（事業active・環境一致・LIVE承認・サーバー時刻・店適格・全券active・規則版・金額）→ 1枚でも不適格なら全体失敗
+      → operations/redemptions/items/coupons(redeemed)/draft(consumed)/audit/outbox を同時に書込み。
+    - 二重利用は unique(redemption_items.coupon_id) と行ロックの両方で防止。
+    - 結果不明時: GET /operations/{key} は未記録なら pending を返す（同じ key での再送は安全）。
+  取消（api_reversal_request → api_reversal_decide）
+    - 申請は店主か事務局担当、承認は申請者と別の承認者（直近5分のMFA）。承認で redemption=reversed、券=retired（再利用不可）。元の記録は削除しない。
+    - 精算承認後の取消は既存精算を変更せず、次の精算に負の source（redemption_reversal）として入り、行が負なら exception(NEGATIVE_ADJUSTMENT)。自動引落し・自動相殺なし。
+  紙券: submitted は換金対象外。verified（原本確認・束番号一意・差額は理由必須）だけが精算 source。
+  外部CSV: 同一ファイルhashは既存結果を返す。同一キー同一内容は duplicate(skip)、内容違いは conflict で全体停止。
+    unknown shop は同組織の店にのみ手動割当。reversed は元取引が必要で全額のみ（部分は unsupported）。
+  精算: source = QR confirmed / verified paper / committed external。店×事業×期間で集計。期間は [開始, 終了)。
+    sources は unique(source_type, source_id) で二重精算不可。生成は事業ごとに advisory lock。
+    draft → review（例外検査）→ approved（作成者≠承認者・MFA・合計一致検査・口座版と内容hashを固定）→ exported（支払作業票。支払ではない）
+    → 銀行結果の取込(staged) → 別担当が確定 → 行ごとに confirmed / failed / exception。success かつ金額完全一致のみ confirmed。
+    バッチ状態: すべて confirmed/resolved → confirmed、一部 → partially_confirmed、失敗・不一致・保留あり → exception。
+    店舗の表示状態: 集計中 / 事務局確認済み / 振込手続き中 / 振込結果確認済み / 要確認（店の入金申告は別表示で昇格しない）。
+
+3. 権限（app.require_office / app.require_shop / RLS）
+  shop_staff: 受付・回答・相談・自店履歴。 shop_owner: ＋取消申請・口座変更申請（MFA直近）。
+  office_operator: 発行・精算案・依頼・相談・原本確認・代理入力。 office_approver: 承認系（他者作成分のみ、MFA直近）。
+  tenant_admin: 設定・権限（自己付与不可・最後の管理者削除不可）。 auditor: 監査・マスク出力。
+  事務局の操作は aal2 必須、セッション開始から8時間以内。所属のない組織のリソースは 404（存在を推測させない）。
+
+4. 表示番号
+  受付番号 R000001、相談 Q00001、発行バッチ B0001、券番号 B0001-001（秘密 token とは別）。組織内の連番で、欠番は埋めない。

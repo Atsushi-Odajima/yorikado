@@ -25,7 +25,7 @@ export function TenantSettingsForm({ tenant }: { tenant: { id: string; version: 
           <input id={k} className={ui.input} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
         </div>
       ))}
-      <label className={ui.choice} aria-checked={f.emailNotifications} style={{ marginBottom: 16 }}>
+      <label className={ui.choice} data-checked={f.emailNotifications} style={{ marginBottom: 16 }}>
         <input type="checkbox" checked={f.emailNotifications} onChange={(e) => setF({ ...f, emailNotifications: e.target.checked })} />
         アプリ内通知と同じ内容をメールでも送る（本文に金額・口座などは含めません）
       </label>

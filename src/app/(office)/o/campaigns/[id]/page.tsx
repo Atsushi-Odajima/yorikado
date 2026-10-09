@@ -10,6 +10,7 @@ import { OfficeShell } from '@/components/office/Shell';
 import o from '@/components/office/office.module.css';
 import { d, dt, Notice, StateBadge, ui, yen } from '@/components/ui';
 import { nowMs } from '@/lib/time';
+import { externalVoucherAdapter } from '@/server/adapters';
 import { requireOffice } from '@/server/auth/page';
 
 export const metadata: Metadata = { title: '地域券事業' };
@@ -135,7 +136,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
       {c.mode === 'external_csv' && (
         <section className={o.section}>
           <h2 className={ui.h2}>外部券の実績CSV</h2>
-          <p className={ui.help}>提供元の正式な実績データを取り込みます。これは外部券の決済ではありません。標準列: provider, provider_transaction_id, shop_external_code, amount_jpy, occurred_at, status, original_transaction_id（UTF-8、10MB・10,000行まで）。</p>
+          <p className={ui.help}>外部接続: {externalVoucherAdapter.note}。提供元の正式な実績データを取り込みます。これは外部券の決済ではありません。標準列: provider, provider_transaction_id, shop_external_code, amount_jpy, occurred_at, status, original_transaction_id（UTF-8、10MB・10,000行まで）。</p>
           {isOp && <ImportUpload campaignId={id} />}
           <table className={ui.table} style={{ marginTop: 16 }}>
             <thead><tr><th>取込</th><th>提供元</th><th>状態</th><th className={ui.num}>行</th></tr></thead>

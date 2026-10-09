@@ -1,0 +1,236 @@
+openapi: 3.1.0
+info:
+  title: Yorikado API
+  version: 1.0.0
+  description: |
+    BFF API under /api/v1. Authentication is the HttpOnly session cookie set by POST /auth/login.
+    Every state-changing request (POST/PUT/PATCH/DELETE) must send `X-Requested-With: yorikado`
+    and an `Origin` equal to APP_BASE_URL (CSRF). tenantId/shopId in requests are never trusted:
+    the database re-checks membership on every call. Other organisations' resources return 404.
+    Success: {data, requestId}. Failure: {error:{code,message,fieldErrors?,details?,retryable}, requestId}.
+    Amounts are integer JPY. Sensitive values are never put in URLs.
+servers:
+  - url: /api/v1
+components:
+  securitySchemes:
+    session: { type: apiKey, in: cookie, name: sb-*-auth-token }
+    jobSecret: { type: http, scheme: bearer }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, format: uuid }
+      description: Client-generated UUID. Same key + same payload returns the original result; same key + different payload is 409.
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [UNAUTHENTICATED, MFA_REQUIRED, FORBIDDEN, NOT_FOUND, VALIDATION, CONFLICT, ALREADY_USED, EXPIRED, UNSUPPORTED, RESULT_PENDING, RATE_LIMITED, SERVICE_UNAVAILABLE, CSRF, INTERNAL]
+            message: { type: string }
+            fieldErrors: { type: object, additionalProperties: { type: string } }
+            details: { type: object, description: 'e.g. items[{index,code,displayNumber}], blockers[{code,shop}], reason, operationId, current' }
+            retryable: { type: boolean }
+        requestId: { type: string }
+    Draft:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        expiresAt: { type: string, format: date-time }
+        shopName: { type: string }
+        campaignName: { type: string }
+        items: { type: array, items: { type: object, properties: { index: { type: integer }, displayNumber: { type: string }, faceValue: { type: integer } } } }
+        amount: { type: integer }
+        rulesVersion: { type: integer }
+    Operation:
+      type: object
+      properties:
+        operationId: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [pending, confirmed, failed], description: 'pending = nothing recorded for this key yet (safe to retry with the same key)' }
+        receipt:
+          type: [object, 'null']
+          properties:
+            redemptionId: { type: string }
+            receiptNumber: { type: string }
+            amount: { type: integer }
+            occurredAt: { type: string, format: date-time }
+            shopName: { type: string }
+            campaignName: { type: string }
+            status: { type: string, enum: [confirmed, reversed] }
+  responses:
+    Err: { description: Error, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+security: [{ session: [] }]
+paths:
+  /auth/login:
+    post: { summary: Email+password login (rate limited 10/15min per IP and account), security: [], requestBody: { content: { application/json: { schema: { type: object, required: [email, password], properties: { email: { type: string }, password: { type: string } } } } } }, responses: { '200': { description: '{next}' }, '401': { $ref: '#/components/responses/Err' }, '429': { $ref: '#/components/responses/Err' } } }
+  /auth/logout:
+    post: { summary: Logout (scope local|global = all devices), security: [], responses: { '200': { description: ok } } }
+  /auth/recover:
+    post: { summary: Password reset mail (same answer whether or not the account exists), security: [], responses: { '200': { description: ok } } }
+  /auth/password:
+    post: { summary: Set a new password after recovery, responses: { '200': { description: ok } } }
+  /auth/mfa:
+    get: { summary: TOTP factors and assurance level, responses: { '200': { description: ok } } }
+  /auth/mfa/enroll:
+    post: { summary: Start TOTP enrolment (QR + secret), responses: { '200': { description: ok } } }
+  /auth/mfa/verify:
+    post: { summary: Verify a 6-digit TOTP code (upgrades to aal2; refreshes the 5-minute window), responses: { '200': { description: ok }, '422': { $ref: '#/components/responses/Err' } } }
+  /invitations/lookup:
+    post: { summary: Look up an invitation by token (masked email), security: [], responses: { '200': { description: ok }, '404': { $ref: '#/components/responses/Err' } } }
+  /invitations/accept:
+    post: { summary: Accept an invitation (72h, single use, email-bound), security: [], responses: { '200': { description: ok }, '409': { $ref: '#/components/responses/Err' } } }
+  /me:
+    get: { summary: Me, allowed organisations/shops and roles (no bank details), responses: { '200': { description: ok } } }
+  /profile:
+    put: { summary: Display name and terms acceptance, responses: { '200': { description: ok } } }
+  /context/shop:
+    post: { summary: Remember the selected shop (re-checked on every request), responses: { '200': { description: ok } } }
+  /context/tenant:
+    post: { summary: Remember the selected office organisation, responses: { '200': { description: ok } } }
+  /merchant/home:
+    get: { summary: Active campaigns for the shop, unanswered count, unread notifications, parameters: [{ name: shopId, in: query, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: ok } } }
+  /receipt-drafts:
+    post:
+      summary: Quote 1-10 scanned tokens (does not reserve coupons; 120 s; bound to actor and shop). Rate limit 30/min.
+      requestBody: { content: { application/json: { schema: { type: object, required: [shopId, campaignId, tokens], properties: { shopId: { type: string }, campaignId: { type: string }, tokens: { type: array, maxItems: 10, items: { type: string } } } } } } }
+      responses: { '200': { description: Draft, content: { application/json: { schema: { $ref: '#/components/schemas/Draft' } } } }, '409': { $ref: '#/components/responses/Err' }, '422': { $ref: '#/components/responses/Err' }, '429': { $ref: '#/components/responses/Err' } }
+  /receipt-drafts/{id}:
+    get: { summary: Own draft (for the confirm screen), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /redemptions:
+    post:
+      summary: Atomic acceptance. Re-checks everything on server time; all-or-nothing. Rate limit 30/min.
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [draftId, expectedAmount], properties: { draftId: { type: string }, expectedAmount: { type: integer } } } } } }
+      responses: { '200': { description: Operation, content: { application/json: { schema: { $ref: '#/components/schemas/Operation' } } } }, '409': { $ref: '#/components/responses/Err' } }
+  /operations/{id}:
+    get: { summary: Status by operation id or idempotency key (only the actor's), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: Operation } } }
+  /redemptions/{id}:
+    get: { summary: Redemption (shop members of that shop or office), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /redemptions/{id}/reversal-requests:
+    post: { summary: Full reversal request (shop owner or office operator), parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } }
+  /reversals/{id}:
+    get: { summary: Reversal with its redemption, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /reversals/{id}/approve:
+    post: { summary: 'Approve/reject {approve, note} - different approver, MFA within 5 min', parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok }, '403': { $ref: '#/components/responses/Err' } } }
+  /paper-reports:
+    get: { summary: 'List by shopId or campaignId', responses: { '200': { description: ok } } }
+    post: { summary: 'Create (Idempotency-Key) or update a draft/returned report', responses: { '200': { description: ok } } }
+  /paper-reports/{id}:
+    get: { summary: Report, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /paper-reports/{id}/submit:
+    post: { summary: Submit (expectedVersion), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /paper-reports/{id}/review:
+    post: { summary: 'Office verify | return | reject (difference needs a reason)', parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /tasks:
+    get: { summary: 'Merchant list (?shopId) or office list (?tenantId)', responses: { '200': { description: ok } } }
+  /tasks/{id}:
+    get: { summary: Task for a shop (?shopId). Opening never acknowledges., parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /tasks/{id}/responses:
+    post: { summary: 'Answer {shopId, expectedRevision, payload} - 409 with current answer on revision conflict', parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok }, '409': { $ref: '#/components/responses/Err' } } }
+  /tasks/{id}/acknowledge:
+    post: { summary: Explicit notice acknowledgement, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /office/tasks:
+    post: { summary: Create (Idempotency-Key) or update a draft task (max 5 questions), responses: { '200': { description: ok } } }
+  /office/tasks/{id}:
+    get: { summary: Office task detail with recipients, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /office/tasks/{id}/publish:
+    post: { summary: Publish (snapshot recipients; definition fixed), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /office/tasks/{id}/close:
+    post: { summary: Close, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /office/tasks/{id}/remind:
+    post: { summary: Remind unanswered shops (<=1 per shop per day, 09-18 JST), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /office/tasks/{id}/revise:
+    post: { summary: New draft revision of a published task, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } }
+  /office/tasks/{id}/extend:
+    post: { summary: Extend / reopen, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /office/tasks/{id}/proxy-response:
+    post: { summary: 'Proxy answer (reason + channel recorded)', parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } }
+  /office/tasks/{id}/review:
+    post: { summary: Approve or return a photo/shop-change answer, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /requests:
+    get: { summary: 'List (?shopId or ?tenantId&status)', responses: { '200': { description: ok } } }
+    post: { summary: New consultation (idempotent), parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } }
+  /requests/{id}:
+    get: { summary: Thread (internal memos only for office), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+    patch: { summary: 'Office status/assignment (expectedVersion). Resolve needs a reason.', parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok }, '409': { $ref: '#/components/responses/Err' } } }
+  /requests/{id}/messages:
+    post: { summary: Reply (shop reopens within 30 days of resolution), parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } }
+  /office/requests/{id}/internal-notes:
+    post: { summary: Office-only internal memo, parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } }
+  /attachments/upload-intent:
+    post: { summary: 'Create a quarantine upload (JPEG/PNG/WebP, <=10MB) -> {id, uploadUrl}', responses: { '200': { description: ok }, '422': { $ref: '#/components/responses/Err' } } }
+  /attachments/{id}/finalize:
+    post: { summary: Decode, re-encode (EXIF removed, long edge 2400px); only then visible, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /attachments/{id}/download:
+    get: { summary: 302 to a 60-second signed URL after permission check, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '302': { description: redirect }, '404': { $ref: '#/components/responses/Err' } } }
+  /campaigns:
+    get: { summary: Office list (?tenantId), responses: { '200': { description: ok } } }
+    post: { summary: Create a draft campaign, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } }
+  /campaigns/{id}:
+    get: { summary: Campaign detail, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /campaigns/{id}/submit: { post: { summary: Request publication, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /campaigns/{id}/approve: { post: { summary: Approve (different person, MFA), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /campaigns/{id}/approve-live: { post: { summary: LIVE review approval (LIVE deployment + readiness), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /campaigns/{id}/live-readiness: { put: { summary: LIVE readiness checklist, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /campaigns/{id}/suspend: { post: { summary: Suspend (reason shown to shops), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /campaigns/{id}/resume: { post: { summary: Resume, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /campaigns/{id}/close: { post: { summary: Close, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /campaigns/{id}/issuance-batches:
+    post: { summary: 'Issue 1-200 inactive coupons; encrypted print data (24h)', parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } }
+  /issuance-batches/{id}/download: { post: { summary: 'Print data (MFA, audited, within 24h). Returned in the body, never in a URL.', parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok }, '409': { $ref: '#/components/responses/Err' } } } }
+  /issuance-batches/{id}/confirm-receipt: { post: { summary: Printed count check, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /issuance-batches/{id}/activate: { post: { summary: Activate (approver other than the issuer, MFA), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /issuance-batches/{id}/void: { post: { summary: Void unused coupons, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /imports/external:
+    post: { summary: 'Stage an external CSV (multipart: campaignId, sourceName, file, mapping?) - preview only', responses: { '200': { description: ok }, '422': { $ref: '#/components/responses/Err' } } }
+  /imports/{id}: { get: { summary: Preview with row statuses, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /imports/{id}/map-shop: { post: { summary: Map unknown shop code to a shop of the same tenant, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /imports/{id}/commit: { post: { summary: Commit (only without errors/conflicts/unknown shops), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok }, '409': { $ref: '#/components/responses/Err' } } } }
+  /imports/{id}/reject: { post: { summary: Discard a staged import, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /settlements:
+    get: { summary: 'Office list (?tenantId) or own shop lines (?shopId)', responses: { '200': { description: ok } } }
+  /settlements/generate: { post: { summary: 'Generate a draft (month YYYY-MM or explicit [start,end))', parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } } }
+  /settlements/{id}: { get: { summary: Batch with lines, sources and blockers, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /settlements/{id}/submit-review: { post: { summary: Submit for approval (blocks on exceptions), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok }, '409': { $ref: '#/components/responses/Err' } } } }
+  /settlements/{id}/recalculate: { post: { summary: Recalculate an unapproved batch, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /settlements/{id}/discard: { post: { summary: Discard an unapproved batch, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /settlements/{id}/approve: { post: { summary: 'Approve/return (approver != preparer, MFA). Freezes bank versions and content hash.', parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /settlements/{id}/export-worklist: { post: { summary: 'Payment worklist CSV (NOT a bank import file). Re-exports are marked; confirmed lines excluded.', parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: text/csv } } } }
+  /settlements/{id}/import-bank-results: { post: { summary: 'Stage bank results CSV (line_id, bank_reference, amount_jpy, result, executed_date)', parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /settlements/{id}/confirm-bank-results: { post: { summary: 'Confirm {importId} by a person other than the uploader (MFA)', parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /settlement-lines/{id}/resolve: { post: { summary: Record the operational decision for an exception line, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /settlement-lines/{id}/declare: { post: { summary: Shop owner declares receipt (never upgrades the bank state), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /bank-change-requests: { post: { summary: 'Shop owner (recent MFA) requests a new bank account (encrypted at rest)', parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } } }
+  /bank-change-requests/{id}/approve: { post: { summary: Approver (other person, MFA) decides, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /shops:
+    get: { summary: Office shop list (?tenantId), responses: { '200': { description: ok } } }
+    post: { summary: Register a shop, parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } }
+  /shops/{id}:
+    get: { summary: Shop with members, invitations, masked bank accounts, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+    patch: { summary: Update (expectedVersion), parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } }
+  /shops/{id}/bank-accounts: { get: { summary: Masked bank account versions, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /invitations: { post: { summary: 'Invite (shop roles: operator/admin; office roles: admin + MFA)', parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }], responses: { '200': { description: ok } } } }
+  /invitations/{id}/revoke: { post: { summary: Revoke a pending invitation, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /memberships: { post: { summary: 'Set office role (tenant_admin, MFA; no self-grant; keep >= 1 admin)', responses: { '200': { description: ok } } } }
+  /shop-memberships: { post: { summary: Revoke a shop member, responses: { '200': { description: ok } } } }
+  /office/queue: { get: { summary: 'O1 work queue (?tenantId)', responses: { '200': { description: ok } } } }
+  /office/members: { get: { summary: 'Office members (?tenantId)', responses: { '200': { description: ok } } } }
+  /tenants/{id}: { get: { summary: Tenant, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /tenants/{id}/settings: { put: { summary: Contact, hours, reply guidance, email notifications, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /audit: { get: { summary: 'Audit log (?tenantId&before) - admin/auditor/approver', responses: { '200': { description: ok } } } }
+  /exports/tenant: { post: { summary: 'Queue a tenant export (admin full / auditor masked; MFA)', responses: { '200': { description: ok } } } }
+  /exports: { get: { summary: 'Exports (?tenantId)', responses: { '200': { description: ok } } } }
+  /exports/{id}: { get: { summary: Export status, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /exports/{id}/download: { post: { summary: '60-second signed URL (MFA, audited, file expires in 24h)', parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /notifications: { get: { summary: In-app notifications, responses: { '200': { description: ok } } } }
+  /notifications/{id}/read: { post: { summary: Mark read, parameters: [{ $ref: '#/components/parameters/Id' }], responses: { '200': { description: ok } } } }
+  /history: { get: { summary: 'Shop history (?shopId&kind=all|voucher|task|request&before) 50 per page', responses: { '200': { description: ok } } } }
+  /internal/jobs/run:
+    post: { summary: Job runner (cron). Bearer JOB_RUNNER_SECRET; everyone else 403., security: [{ jobSecret: [] }], responses: { '200': { description: summary }, '403': { $ref: '#/components/responses/Err' } } }
+    get: { summary: Same as POST (for hosts whose cron uses GET), security: [{ jobSecret: [] }], responses: { '200': { description: summary } } }

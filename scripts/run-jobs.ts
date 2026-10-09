@@ -1,4 +1,3 @@
-export {};
 /**
  * Trigger the job runner endpoint (outbox: notifications, invitations,
  * reminders, exports, purge). `--loop` repeats every 30 seconds for local
@@ -24,5 +23,6 @@ async function once() {
   }
 }
 
-await once();
-if (loop) setInterval(once, 30_000);
+void once().then(() => {
+  if (loop) setInterval(once, 30_000);
+});

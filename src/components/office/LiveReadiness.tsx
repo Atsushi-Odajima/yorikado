@@ -43,7 +43,7 @@ export function LiveReadinessForm({ campaignId, r, canEdit }: { campaignId: stri
       <ErrorNotice error={error} />
       <p className={ui.help}>チェックは証跡に基づいて行ってください。環境変数だけでLIVEへは移行できません。</p>
       {ITEMS.map(([k, label]) => (
-        <label key={k} className={ui.choice} aria-checked={Boolean(v[k])} style={{ marginBottom: 8 }}>
+        <label key={k} className={ui.choice} data-checked={Boolean(v[k])} style={{ marginBottom: 8 }}>
           <input type="checkbox" disabled={!canEdit} checked={Boolean(v[k])} onChange={(e) => setV({ ...v, [k]: e.target.checked })} style={{ width: 24, height: 24 }} />
           {label}
         </label>

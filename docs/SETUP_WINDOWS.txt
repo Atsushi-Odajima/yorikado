@@ -1,0 +1,98 @@
+Yorikado / Windows 11 での開発・DEMO起動手順
+=============================================
+対象: Windows 11（PowerShell）。すべて DEMO（架空データ）です。LIVE へは使わないでください。
+
+0. 準備するもの
+  - Git for Windows
+  - Node.js 22 LTS（22.12 以上。`node -v` で確認）
+  - Docker Desktop（WSL2 バックエンド）… ローカルの Supabase に必要。組織のライセンス条件（従業員数・売上による有償条件）を確認してください。
+  - VS Code 等のエディタ
+  Docker が使えない場合は「7. Docker なしの場合」を参照。
+
+1. 取得と依存関係のインストール
+  PS> git clone <このリポジトリ>
+  PS> cd yorikado
+  PS> npm ci
+
+2. 環境ファイル
+  PS> Copy-Item .env.example .env.local
+  .env.local を開き、次を設定します（値はチャット等に貼らないこと）。
+   - COUPON_HMAC_KEY / EXPORT_ENCRYPTION_KEY: それぞれ別の値。次のコマンドの出力を1つずつ使う
+       PS> node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   - JOB_RUNNER_SECRET: 32文字以上のランダム値
+       PS> node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   - SUPABASE_PUBLISHABLE_KEY / SUPABASE_SECRET_KEY: 手順3で表示される値
+
+3. ローカル Supabase の起動
+  PS> npm run db:start
+  初回はイメージのダウンロードに数分かかります。完了すると次のような値が表示されます。
+    API URL:          http://127.0.0.1:54321   → SUPABASE_URL
+    Publishable key:  sb_publishable_...       → SUPABASE_PUBLISHABLE_KEY
+    Secret key:       sb_secret_...            → SUPABASE_SECRET_KEY
+    DB URL:           postgresql://postgres:postgres@127.0.0.1:54322/postgres → DATABASE_URL
+    Mailpit URL:      http://127.0.0.1:54324   （ローカルのメール受信箱）
+  後から確認するとき: PS> npm run db:status
+  ※ supabase/config.toml を変更したら `npm run db:stop` → `npm run db:start` で再起動してください（認証設定は起動時に読み込まれます）。
+
+4. DEMO データの投入（ローカルのみ）
+  PS> npm run db:reset:demo
+  「DEMO と入力してください」と表示されたら DEMO と入力します。
+  APP_ENV=demo かつ SUPABASE_URL/DATABASE_URL が localhost の場合だけ実行されます。LIVE をリセットするスクリプトはありません。
+  完了すると tmp\demo-coupons.html に練習用QR券の一覧ができます（スマホで読み取る練習用。換金不可）。
+
+5. アプリの起動
+  PS> npm run dev
+  別の PowerShell で自動ジョブ（通知・招待メール・催促・データ出力）を動かします。
+  PS> npm run jobs:dev
+  ブラウザで http://localhost:3000 を開きます。
+
+6. DEMO アカウント（すべて架空・パスワード共通 yorikado-demo-2026 / DEMO専用）
+   店舗
+     a.staff@example.com     山田商店の店員
+     a.owner@example.com     山田商店・さくら食堂の店主（店舗切替あり。口座変更は二段階認証が必要）
+     b.staff@example.com     あおば通り会 青葉青果の店員（別組織）
+   事務局（ひなた商店街）
+     a.operator@example.com  担当（発行・精算案・依頼・相談）
+     a.approver@example.com  承認（精算・取消・発行の有効化・口座変更）
+     a.admin@example.com     管理者
+     a.auditor@example.com   監査（閲覧・マスク出力）
+   事務局（あおば通り会）: b.operator@example.com / b.approver@example.com
+   事務局と店主の二段階認証は DEMO 専用シークレット「YORIKADODEMOTOTPSECRETAA」が登録済みです。
+   認証アプリ（Google Authenticator 等）に「キーを入力」でこの値（時間ベース）を登録すると6桁コードが表示されます。
+   LIVE では各自が自分の認証アプリを登録します（DEMO シークレットは使われません）。
+
+  招待メールの確認: 事務局で店舗担当者を招待 → `npm run jobs:dev` が送信 → http://127.0.0.1:54324 (Mailpit) に届いたメールのリンクを開く。
+  パスワード再設定メールも Mailpit に届きます。
+
+7. Docker なしの場合（専用の Supabase DEMO プロジェクトを使う）
+  a. supabase.com で DEMO 専用プロジェクトを作成（LIVE と別のプロジェクト・別の組織設定にする）
+  b. PS> npx supabase login
+     PS> npx supabase link --project-ref <DEMOのプロジェクトID>
+     PS> npx supabase db push            # supabase/migrations を適用
+  c. ダッシュボードの SQL Editor で supabase/seed.sql を実行（LIVE と表示されたDBでは自動的に失敗します）
+  d. Authentication → Providers → Email: 「Confirm email」不要、Sign-ups 無効 / MFA → TOTP を有効
+     Authentication → URL Configuration: Site URL と Redirect URL を APP_BASE_URL に一致させる
+     Authentication → Email Templates → Reset password: supabase/templates/recovery.html の内容を貼る
+  e. .env.local の SUPABASE_URL / KEY / DATABASE_URL（Session pooler の接続文字列）をそのプロジェクトの値にする
+  f. 動的な DEMO データ: PS> npx tsx --env-file=.env.local scripts/seed-demo.ts
+     （db-reset-demo はローカル専用のため使えません。seed-demo は APP_ENV=demo かつ DB が DEMO 表示のときだけ動きます）
+
+8. 品質チェック（すべて実在するスクリプト）
+  PS> npm run lint
+  PS> npm run typecheck
+  PS> npm run test                 # 単体テスト（DB不要）
+  PS> Copy-Item .env.local .env.test
+  PS> npm run test:integration     # ローカルDEMO DB が必要（.env.test のみ参照、localhost 以外は拒否）
+  PS> npx playwright install chromium webkit   # 初回のみ
+  PS> npm run test:e2e             # アプリ(npm run dev)とローカルDBが必要。WebKit は PW_WEBKIT=1 で追加
+  PS> npm run build
+  PS> npm run verify-env           # 設定と DEMO/LIVE 表示の整合チェック
+  PS> npm run backup:check         # ローカルの復元訓練（Docker 必須）
+  PS> npm run perf                 # 性能測定（本番ビルドで実行推奨。scripts/perf.ts 冒頭参照）
+
+9. スマホ（同じLAN）で見た目だけ確認する
+  PS> npx next dev -H 0.0.0.0
+  スマホで http://<PCのIP>:3000 を開くと画面レイアウトは確認できます。
+  ただし HTTP の LAN IP ではカメラは使えません（ブラウザの制限）。カメラの受入テストは HTTPS の DEMO URL（docs/DEPLOYMENT.txt）で行ってください。
+  証明書警告を無視させる方法は使わないでください。
+  また APP_BASE_URL と異なるホストからの POST は CSRF 対策で拒否されます。LAN確認時は DEMO かつ開発モードに限り同一ホスト判定で許可されます。

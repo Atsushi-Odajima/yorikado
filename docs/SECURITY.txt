@@ -1,0 +1,61 @@
+Yorikado / セキュリティ設計と残課題
+=================================
+1. 認証・セッション（BFF 方式）
+  - ブラウザは Supabase に直接ログインしません。Next.js の Route Handler がサーバー側で Supabase Auth に接続し、
+    セッションは HttpOnly / SameSite=Lax / (HTTPS時)Secure の Cookie に保存。localStorage にトークンを置きません（ESLint で localStorage を禁止）。
+  - proxy.ts がアクセストークンの更新を行い、CSP nonce・セキュリティヘッダを付与。
+  - アプリ側の絶対期限: 店舗7日・事務局8時間（app_sessions）。完全ログアウト/端末紛失は「すべての端末からログアウト」で
+    Supabase の全セッション失効＋app_sessions を revoked。
+  - 事務局・承認・管理者は TOTP 必須（aal2 でないと事務局の関数は MFA_REQUIRED）。重要操作は TOTP 検証から5分以内（JWT amr の時刻で判定）。
+    店主の口座変更申請も直近 MFA 必須。毎回の券受付には MFA を挟みません。
+  - 招待: 72時間・単回使用・SHA-256 のみ保存。使用済みリンクで権限は再付与されません。招待先メールとログインメールの一致を検査。
+  - パスワード再設定・招待照会は存在の有無で応答を変えません。
+
+2. CSRF・API
+  - POST/PUT/PATCH/DELETE は X-Requested-With: yorikado（独自ヘッダ＝CORS プリフライト必須、CORS は許可していない）と
+    Origin が APP_BASE_URL と一致することを検査。GET に状態変更なし（例外: 添付ダウンロードは権限検査後の60秒署名URLへのリダイレクト）。
+  - 受信した tenantId/role は信用せず、DB 関数が auth.uid() と有効な所属から毎回判定。
+  - エラーは {error:{code,message,fieldErrors?,retryable},requestId}。内部例外の詳細は返しません。
+
+3. データベース
+  - 全テーブル RLS 有効。API ロール（anon/authenticated）は書込権限なし。業務の書込は SECURITY DEFINER の api_* 関数のみ
+    （search_path='' 固定、auth.uid() から所属検証、PUBLIC/anon の実行権剥奪）。svc_* はサーバー（service_role）専用。
+  - 監査ログは追記のみ（更新・削除トリガで拒否）。金銭履歴（redemptions/items/reversals/operations/bank_results/external_transactions）は削除不可。
+  - PostgREST の公開スキーマは public のみ（graphql_public を除外）。関数内の動的SQLなし（文字列連結のSQLなし）。
+  - Storage はすべて非公開バケット。API ロール用のポリシーを作らず、サーバーが権限確認後に60秒の署名URLを発行。
+
+4. 秘密値と暗号
+  - COUPON_HMAC_KEY: 券 token の HMAC（HKDF でサブ鍵化）。EXPORT_ENCRYPTION_KEY: 口座情報・印刷データ・招待トークンの AES-256-GCM（用途ごとに HKDF サブ鍵＋AAD）。
+  - いずれも 256bit 以上・CSPRNG・サーバー環境変数のみ（NEXT_PUBLIC_ 禁止、verify-env が検査）。
+  - 鍵ローテーション:
+      1) 新しい鍵を生成し *_KEY に設定、*_KEY_VERSION を+1
+      2) 旧鍵を *_KEYS_OLD に "旧版:旧鍵" で追加（; 区切り）→ 旧データの復号・旧券の照合が継続
+      3) 券: 新規発行は新鍵。旧鍵の券がすべて失効/使用済みになったら旧鍵を削除
+         口座: 管理者が口座を再登録（再暗号化）した後に旧鍵を削除。印刷データ・招待は24h/72hで失効するため期限後に削除
+      4) 旧鍵の削除前に npm run verify-env と復号確認を行う
+  - ログ: src/server/log.ts は token/password/key 等のキーを伏字化。リクエスト本文・券 token・口座番号は記録しません。
+
+5. 券（独自QR）
+  - 128bit token、QR は "YK1:<token>"、DB は digest のみ。表示番号は token と別。URL・解析サービスへ token を送りません。
+  - 二段階発行（未有効で作成→印刷・枚数確認→別担当が有効化）。印刷データは暗号化・private storage・24時間・取得はMFA＋監査。
+  - コピーされたQRの完全防止はできません。最初の有効受付のみ成功し、流出時はバッチ失効・調査が可能です。
+  - レート制限（DB 共有）: ログイン 10回/15分（IP・アカウント別）、券照会 30回/分/利用者、確定 30回/分/利用者。
+    失敗が多い店舗は事務局に警告通知。値は暫定で、繁忙時の実証で調整が必要。
+
+6. 添付
+  - JPEG/PNG/WebP のみ、10MB、最大3枚。一時隔離 → サーバーでマジックバイト検査・デコード・再エンコード（EXIF/GPS除去・長辺2400px）
+    → 完了後のみ閲覧可。HTML/SVG/実行形式は不可。HEIC はサーバー変換なし（端末側でJPEGへ。iOS は accept 指定で自動変換）。
+  - 内部メモの添付は店舗から取得不可。
+  - マルウェア検査エンジンは未接続（デコード・再エンコードで実行コンテンツは除去されるが、ウイルス検査ではない）。
+
+7. ブラウザ・PWA
+  - CSP（script は nonce + strict-dynamic、frame-ancestors none）、nosniff、Referrer-Policy、Permissions-Policy(camera=self)。
+  - Service Worker は offline.html・ロゴ・フォント・manifest のみキャッシュ。/api /auth /m /o・添付・CSV・QRデータは対象外。POST は一切触らない。
+  - カメラ映像はブラウザ内で ZXing がデコードし、外部へ送らない。
+
+8. 既知の残課題（受容 or 対応が必要）
+  - TOTP の復旧コード・紛失時手順は Supabase 標準機能のみ（管理者が要素を削除して再登録させる運用手順を OPERATIONS に記載）。
+  - 添付のウイルス検査未接続。必要なら外部スキャナ連携を検討。
+  - CSP の style-src に 'unsafe-inline'（React の style 属性のため）。
+  - 外部ペネトレーションテスト未実施。LIVE 前に第三者診断を推奨。
+  - 期限削除（保存期間に基づく削除の承認フロー）は未実装（HANDOFF 参照）。

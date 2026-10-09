@@ -1,0 +1,3 @@
+﻿provider,provider_transaction_id,shop_external_code,amount_jpy,occurred_at,status,original_transaction_id
+DEMO_PROVIDER,DEMO-TX-0101,SHOP-UNKNOWN-99,500,2026-10-09T10:00:00+09:00,confirmed,
+DEMO_PROVIDER,DEMO-TX-0102,SHOP-AOBA-01,500,2026-10-09T10:00:00+09:00,confirmed,

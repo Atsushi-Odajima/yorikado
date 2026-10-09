@@ -3,7 +3,7 @@
  * Run only via `npm run db:reset:demo` (guards LIVE / non-local targets).
  * Dates are relative to the moment of seeding; nothing depends on a fixed 2026 date.
  */
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import QRCode from 'qrcode';
@@ -120,7 +120,7 @@ async function attachment(k: UserKey, tenant: string, shop: string | null, purpo
     await c.query('begin');
     await call(c, 'svc_attachment_finalize', {
       p_id: intent.id, p_actor: USERS[k].id, p_ok: true, p_object_path: cleanPath, p_mime: 'image/png', p_size: png.byteLength,
-      p_sha256: createHmac('sha256', 'x').update(png).digest('hex'), p_width: 320, p_height: 240, p_reason: null,
+      p_sha256: createHash('sha256').update(png).digest('hex'), p_width: 320, p_height: 240, p_reason: null,
     });
     await c.query('commit');
   } finally {
