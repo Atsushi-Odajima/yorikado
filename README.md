@@ -4,6 +4,14 @@
 
 > **DEMO**: このリポジトリの初期データはすべて架空です（練習用・実際の券には使えません）。実在の発行者・銀行・外部券サービスとは接続していません。
 
+## 実装範囲と確認先
+
+- 初期データは架空券のDEMOです。実在の券発行者・銀行・外部券サービスには接続していません。
+- 支払作業票CSVは銀行へ直接取り込む振込ファイルではありません。実機・LIVE運用の確認は引継ぎ資料を参照してください。
+
+実装箇所：[src/server/api](./src/server/api) / [supabase/migrations](./supabase/migrations) / [scripts](./scripts) / [tests](./tests)。
+現在の残項目：[docs/HANDOFF.txt](./docs/HANDOFF.txt)。
+
 ## できること（v1）
 
 | 区分 | 内容 |
